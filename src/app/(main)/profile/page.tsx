@@ -59,9 +59,16 @@ export default function ProfilePage() {
         .select("poll_id, polls(*)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
-      const saved = (saves ?? [])
-        .map((s) => (s as { polls: Poll | null }).polls)
-        .filter(Boolean) as Poll[];
+
+      const saved: Poll[] = [];
+      for (const row of saves ?? []) {
+        const joined = (row as unknown as { polls: Poll | Poll[] | null }).polls;
+        if (Array.isArray(joined)) {
+          if (joined[0]) saved.push(joined[0]);
+        } else if (joined) {
+          saved.push(joined);
+        }
+      }
       setSavedPolls(saved);
 
       setLoading(false);

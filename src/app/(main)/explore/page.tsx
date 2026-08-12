@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PollCard } from "@/components/poll/poll-card";
 import type { PollWithCreator, Profile } from "@/types/database";
-
 import { calculateVibeMatch } from "@/lib/utils";
 import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,8 +15,6 @@ export default function ExplorePage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const [myMoods, setMyMoods] = useState<string[]>([]);
-  const [myCats, setMyCats] = useState<string[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -37,8 +34,6 @@ export default function ExplorePage() {
           .single();
         moods = me?.moods ?? [];
         cats = me?.categories_interest ?? [];
-        setMyMoods(moods);
-        setMyCats(cats);
       }
 
       const { data } = await supabase
@@ -115,7 +110,11 @@ export default function ExplorePage() {
                 <div className="mb-2 flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-lg font-bold">
                   {u.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={u.avatar_url} alt="" className="h-full w-full object-cover" />
+                    <img
+                      src={u.avatar_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
                     u.username[0].toUpperCase()
                   )}
@@ -126,7 +125,11 @@ export default function ExplorePage() {
                 <p className="mt-0.5 text-[10px] font-semibold text-pink-400">
                   {u.vibe}% Vibe Match
                 </p>
-                <Button size="sm" variant="secondary" className="mt-2 h-7 text-[10px] px-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="mt-2 h-7 px-2 text-[10px]"
+                >
                   Say Hi
                 </Button>
               </Link>

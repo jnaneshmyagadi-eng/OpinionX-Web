@@ -35,7 +35,7 @@ export default function PollDetailPage() {
         .single();
 
       if (p) {
-        let enriched: PollWithCreator = {
+        const enriched: PollWithCreator = {
           ...p,
           profiles: p.profiles as PollWithCreator["profiles"],
         };

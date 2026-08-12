@@ -19,7 +19,7 @@ cp .env.example .env.local
 Fill `.env.local` from Supabase **Project Settings → API**:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://rgyvouuvxqxcxghffjuv.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
@@ -38,7 +38,7 @@ In Supabase **SQL Editor**, run in order:
 
 - Authentication → Providers → **Email** enabled
 - Optional: Google OAuth
-- URL Configuration → Site URL: `http://localhost:3000` (local) and your Vercel URL (prod)
+- URL Configuration → Site URL: production Vercel URL
 - Redirect URLs: include `https://YOUR_VERCEL_DOMAIN/**`
 
 ### Run
@@ -63,15 +63,13 @@ npm run seed
 
 ## Vercel deployment
 
-1. Push this repo to GitHub.
-2. [vercel.com](https://vercel.com) → Import project.
-3. Framework: Next.js (auto-detected).
-4. Environment variables (same as `.env.local`):
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (optional; only needed for admin/seed)
-5. Deploy.
-6. Add the production domain to Supabase Auth URL Configuration + redirect allow list.
+1. Import `jnaneshmyagadi-eng/OpinionX-Web` in Vercel.
+2. Framework: Next.js (auto-detected).
+3. Environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL` = `https://rgyvouuvxqxcxghffjuv.supabase.co`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = anon key from Supabase
+4. Deploy.
+5. Add the production domain to Supabase Auth URL Configuration.
 
 ## Project layout
 

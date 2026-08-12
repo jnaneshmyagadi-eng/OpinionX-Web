@@ -320,7 +320,8 @@ export type Comment = Database["public"]["Tables"]["comments"]["Row"];
 export type Follow = Database["public"]["Tables"]["follows"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 export type Conversation = Database["public"]["Tables"]["conversations"]["Row"];
-export type ConversationMember = Database["public"]["Tables"]["conversation_members"]["Row"];
+export type ConversationMember =
+  Database["public"]["Tables"]["conversation_members"]["Row"];
 export type Message = Database["public"]["Tables"]["messages"]["Row"];
 
 export type PollWithCreator = Poll & {
@@ -345,18 +346,56 @@ export const CATEGORIES = [
   "sports",
   "fashion",
   "travel",
+  "gaming",
+  "movies",
+  "music",
 ] as const;
 
+/** Mood keys stored in DB (lowercase). */
 export const MOODS = [
-  "curious",
-  "fun",
-  "serious",
-  "spicy",
+  "trending",
+  "funny",
+  "love",
   "chill",
-  "bold",
-  "thoughtful",
-  "playful",
+  "curious",
+  "debate",
+  "emotional",
+  "creative",
+  "fashion",
+  "food",
+  "sports",
+  "gaming",
+  "tech",
+  "movies",
+  "music",
+  "ideas",
+  "world",
+  "india",
 ] as const;
+
+export const MOOD_META: Record<
+  (typeof MOODS)[number],
+  { label: string; emoji: string }
+> = {
+  trending: { label: "Trending", emoji: "🔥" },
+  funny: { label: "Funny", emoji: "😂" },
+  love: { label: "Love", emoji: "❤️" },
+  chill: { label: "Chill", emoji: "😎" },
+  curious: { label: "Curious", emoji: "🤔" },
+  debate: { label: "Debate", emoji: "😡" },
+  emotional: { label: "Emotional", emoji: "🥹" },
+  creative: { label: "Creative", emoji: "🎨" },
+  fashion: { label: "Fashion", emoji: "👗" },
+  food: { label: "Food", emoji: "🍔" },
+  sports: { label: "Sports", emoji: "🏏" },
+  gaming: { label: "Gaming", emoji: "🎮" },
+  tech: { label: "Tech", emoji: "📱" },
+  movies: { label: "Movies", emoji: "🎬" },
+  music: { label: "Music", emoji: "🎵" },
+  ideas: { label: "Ideas", emoji: "💡" },
+  world: { label: "World", emoji: "🌍" },
+  india: { label: "India", emoji: "🇮🇳" },
+};
 
 export type Category = (typeof CATEGORIES)[number];
 export type Mood = (typeof MOODS)[number];

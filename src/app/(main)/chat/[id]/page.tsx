@@ -34,10 +34,17 @@ export default function ChatRoomPage() {
         .eq("conversation_id", id)
         .order("created_at", { ascending: true });
 
+      const rows = (data ?? []) as unknown as Array<
+        Message & { sender: Profile | null }
+      >;
       setMessages(
-        (data ?? []).map((m) => ({
-          ...m,
-          sender: m.sender as Profile | null,
+        rows.map((m) => ({
+          id: m.id,
+          conversation_id: m.conversation_id,
+          sender_id: m.sender_id,
+          content: m.content,
+          created_at: m.created_at,
+          sender: m.sender ?? null,
         }))
       );
       setLoading(false);
@@ -55,15 +62,13 @@ export default function ChatRoomPage() {
           filter: `conversation_id=eq.${id}`,
         },
         async (payload) => {
+          const row = payload.new as Message;
           const { data: sender } = await supabase
             .from("profiles")
             .select("*")
-            .eq("id", payload.new.sender_id)
+            .eq("id", row.sender_id)
             .single();
-          setMessages((prev) => [
-            ...prev,
-            { ...(payload.new as Message), sender },
-          ]);
+          setMessages((prev) => [...prev, { ...row, sender: sender ?? null }]);
         }
       )
       .subscribe();

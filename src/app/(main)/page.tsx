@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PollCard } from "@/components/poll/poll-card";
 import type { PollWithCreator } from "@/types/database";
-import { MOODS } from "@/types/database";
+import { MOODS, MOOD_META } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
@@ -16,6 +16,7 @@ export default function HomePage() {
   const [sort, setSort] = useState<SortMode>("trending");
   const [moodFilter, setMoodFilter] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+
   const loadPolls = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
@@ -28,24 +29,16 @@ export default function HomePage() {
       let query = supabase
         .from("polls")
         .select(
-          `
-          *,
-          profiles:creator_id (id, username, display_name, avatar_url)
-        `
+          `*, profiles:creator_id (id, username, display_name, avatar_url)`
         )
         .eq("is_active", true)
-        .limit(30);
+        .limit(40);
 
-      if (moodFilter) {
+      if (moodFilter && moodFilter !== "trending") {
         query = query.eq("mood", moodFilter);
       }
 
-      if (sort === "new") {
-        query = query.order("created_at", { ascending: false });
-      } else {
-        // simple trending: total votes then recency
-        query = query.order("created_at", { ascending: false });
-      }
+      query = query.order("created_at", { ascending: false });
 
       const { data, error } = await query;
       if (error) throw error;
@@ -55,8 +48,7 @@ export default function HomePage() {
         profiles: p.profiles as PollWithCreator["profiles"],
       }));
 
-      // sort client-side for trending
-      if (sort === "trending") {
+      if (sort === "trending" || moodFilter === "trending") {
         enriched = [...enriched].sort(
           (a, b) =>
             b.vote_count_a +
@@ -68,36 +60,38 @@ export default function HomePage() {
 
       if (user) {
         const pollIds = enriched.map((p) => p.id);
-        const [votesRes, likesRes, savesRes] = await Promise.all([
-          supabase
-            .from("votes")
-            .select("poll_id, choice")
-            .eq("user_id", user.id)
-            .in("poll_id", pollIds),
-          supabase
-            .from("likes")
-            .select("poll_id")
-            .eq("user_id", user.id)
-            .in("poll_id", pollIds),
-          supabase
-            .from("saves")
-            .select("poll_id")
-            .eq("user_id", user.id)
-            .in("poll_id", pollIds),
-        ]);
+        if (pollIds.length) {
+          const [votesRes, likesRes, savesRes] = await Promise.all([
+            supabase
+              .from("votes")
+              .select("poll_id, choice")
+              .eq("user_id", user.id)
+              .in("poll_id", pollIds),
+            supabase
+              .from("likes")
+              .select("poll_id")
+              .eq("user_id", user.id)
+              .in("poll_id", pollIds),
+            supabase
+              .from("saves")
+              .select("poll_id")
+              .eq("user_id", user.id)
+              .in("poll_id", pollIds),
+          ]);
 
-        const voteMap = new Map(
-          (votesRes.data ?? []).map((v) => [v.poll_id, v.choice as "a" | "b"])
-        );
-        const likeSet = new Set((likesRes.data ?? []).map((l) => l.poll_id));
-        const saveSet = new Set((savesRes.data ?? []).map((s) => s.poll_id));
+          const voteMap = new Map(
+            (votesRes.data ?? []).map((v) => [v.poll_id, v.choice as "a" | "b"])
+          );
+          const likeSet = new Set((likesRes.data ?? []).map((l) => l.poll_id));
+          const saveSet = new Set((savesRes.data ?? []).map((s) => s.poll_id));
 
-        enriched = enriched.map((p) => ({
-          ...p,
-          user_vote: voteMap.get(p.id) ?? null,
-          user_liked: likeSet.has(p.id),
-          user_saved: saveSet.has(p.id),
-        }));
+          enriched = enriched.map((p) => ({
+            ...p,
+            user_vote: voteMap.get(p.id) ?? null,
+            user_liked: likeSet.has(p.id),
+            user_saved: saveSet.has(p.id),
+          }));
+        }
       }
 
       setPolls(enriched);
@@ -114,23 +108,27 @@ export default function HomePage() {
 
   return (
     <div className="px-3 py-4">
-      {/* Sort & filters */}
-      <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
         {(["trending", "new"] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setSort(s)}
+            onClick={() => {
+              setSort(s);
+              if (s === "trending") setMoodFilter(null);
+            }}
             className={cn(
               "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium capitalize transition",
-              sort === s
+              sort === s && !moodFilter
                 ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white"
                 : "bg-zinc-800 text-zinc-400 hover:text-white"
             )}
           >
-            {s}
+            {s === "trending" ? "🔥 Trending" : "New"}
           </button>
         ))}
-        <div className="mx-1 h-5 w-px bg-zinc-700" />
+      </div>
+
+      <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setMoodFilter(null)}
           className={cn(
@@ -147,13 +145,13 @@ export default function HomePage() {
             key={m}
             onClick={() => setMoodFilter(m === moodFilter ? null : m)}
             className={cn(
-              "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium capitalize transition",
+              "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition",
               moodFilter === m
-                ? "bg-zinc-700 text-white"
+                ? "bg-zinc-700 text-white ring-1 ring-purple-500"
                 : "bg-zinc-800/60 text-zinc-500 hover:text-zinc-300"
             )}
           >
-            {m}
+            {MOOD_META[m].emoji} {MOOD_META[m].label}
           </button>
         ))}
       </div>

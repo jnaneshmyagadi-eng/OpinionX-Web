@@ -13,19 +13,13 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(
-          cookiesToSet: {
-            name: string;
-            value: string;
-            options?: Record<string, unknown>;
-          }[]
-        ) {
+        setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
+            cookiesToSet.forEach((cookie) => {
+              cookieStore.set(cookie.name, cookie.value, cookie.options);
+            });
           } catch {
-            // Called from Server Component — ignore
+            // Called from a Server Component — safe to ignore
           }
         },
       },

@@ -1,0 +1,11 @@
+{
+  "name": "OpinionX",
+  "short_name": "OpinionX",
+  "description": "Social A/B opinion platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#0a0a0b",
+  "orientation": "portrait",
+  "icons": []
+}

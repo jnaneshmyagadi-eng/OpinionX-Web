@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Poll } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Loader2, LogOut, Settings } from "lucide-react";
+import { Loader2, Settings } from "lucide-react";
 import Link from "next/link";
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [savedPolls, setSavedPolls] = useState<Poll[]>([]);
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -52,16 +53,21 @@ export default function ProfilePage() {
         .eq("creator_id", user.id)
         .order("created_at", { ascending: false });
       setPolls(created ?? []);
+
+      const { data: saves } = await supabase
+        .from("saves")
+        .select("poll_id, polls(*)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      const saved = (saves ?? [])
+        .map((s) => (s as { polls: Poll | null }).polls)
+        .filter(Boolean) as Poll[];
+      setSavedPolls(saved);
+
       setLoading(false);
     }
     load();
   }, [supabase, router]);
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
 
   if (loading) {
     return (
@@ -72,6 +78,8 @@ export default function ProfilePage() {
   }
 
   if (!profile) return null;
+
+  const list = tab === "created" ? polls : savedPolls;
 
   return (
     <div className="px-4 py-6">
@@ -98,6 +106,10 @@ export default function ProfilePage() {
           )}
           <div className="mt-3 flex gap-4 text-sm">
             <span>
+              <strong className="text-white">{polls.length}</strong>{" "}
+              <span className="text-zinc-500">polls</span>
+            </span>
+            <span>
               <strong className="text-white">{followers}</strong>{" "}
               <span className="text-zinc-500">followers</span>
             </span>
@@ -110,20 +122,16 @@ export default function ProfilePage() {
       </div>
 
       <div className="mt-6 flex gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="flex-1"
-          type="button"
-          onClick={() => {
-            /* Profile edit can be added later */
-          }}
-        >
-          <Settings className="h-4 w-4" /> Edit profile
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleLogout}>
-          <LogOut className="h-4 w-4" />
-        </Button>
+        <Link href="/profile/edit" className="flex-1">
+          <Button variant="secondary" size="sm" className="w-full" type="button">
+            Edit profile
+          </Button>
+        </Link>
+        <Link href="/settings">
+          <Button variant="outline" size="sm" type="button">
+            <Settings className="h-4 w-4" />
+          </Button>
+        </Link>
       </div>
 
       <div className="mt-6 flex border-b border-zinc-800">
@@ -143,27 +151,47 @@ export default function ProfilePage() {
       </div>
 
       <div className="mt-4 space-y-3">
-        {tab === "created" &&
-          (polls.length === 0 ? (
-            <p className="py-10 text-center text-zinc-500">No polls yet</p>
-          ) : (
-            polls.map((p) => (
-              <Link
-                key={p.id}
-                href={`/poll/${p.id}`}
-                className="block rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition hover:border-zinc-700"
-              >
-                <p className="text-sm font-medium text-white">{p.question}</p>
+        {list.length === 0 ? (
+          <p className="py-10 text-center text-zinc-500">
+            {tab === "created" ? "No polls yet" : "No saved polls"}
+          </p>
+        ) : (
+          list.map((p) => (
+            <Link
+              key={p.id}
+              href={`/poll/${p.id}`}
+              className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition hover:border-zinc-700"
+            >
+              {(p.image_a_url || p.image_b_url) && (
+                <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg">
+                  {p.image_a_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.image_a_url}
+                      alt=""
+                      className="h-full w-1/2 object-cover"
+                    />
+                  )}
+                  {p.image_b_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.image_b_url}
+                      alt=""
+                      className="h-full w-1/2 object-cover"
+                    />
+                  )}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-white">
+                  {p.question}
+                </p>
                 <p className="mt-1 text-xs text-zinc-500">
                   {p.vote_count_a + p.vote_count_b} votes · {p.like_count} likes
                 </p>
-              </Link>
-            ))
-          ))}
-        {tab === "saved" && (
-          <p className="py-10 text-center text-zinc-500">
-            Saved polls appear here
-          </p>
+              </div>
+            </Link>
+          ))
         )}
       </div>
     </div>

@@ -44,12 +44,18 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isAuthPage = path.startsWith("/login") || path.startsWith("/signup");
+  const isAuthPage =
+    path.startsWith("/login") ||
+    path.startsWith("/signup") ||
+    path.startsWith("/forgot-password") ||
+    path.startsWith("/reset-password");
   const isProtected =
     path.startsWith("/create") ||
     path.startsWith("/chat") ||
     path.startsWith("/notifications") ||
-    path.startsWith("/profile");
+    path.startsWith("/profile") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/ai");
 
   if (!user && isProtected) {
     const redirectUrl = request.nextUrl.clone();
@@ -58,7 +64,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && isAuthPage) {
+  if (user && isAuthPage && !path.startsWith("/reset-password")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     return NextResponse.redirect(redirectUrl);

@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -26,11 +27,14 @@ function LoginForm() {
         email,
         password,
       });
-      if (error) throw error;
+      if (error) {
+        setError("Email or password is incorrect.");
+        return;
+      }
       router.push(redirect);
       router.refresh();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
+    } catch {
+      setError("Email or password is incorrect.");
     } finally {
       setLoading(false);
     }
@@ -60,16 +64,35 @@ function LoginForm() {
         >
           Password
         </label>
-        <input
-          id="password"
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-          placeholder="••••••••"
-          autoComplete="current-password"
-        />
+        <div className="relative">
+          <input
+            id="password"
+            type={showPw ? "text" : "password"}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 pr-11 text-white placeholder:text-zinc-600 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            placeholder="••••••••"
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPw((s) => !s)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500"
+            aria-label={showPw ? "Hide password" : "Show password"}
+          >
+            {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
+      <div className="text-right">
+        <Link
+          href="/forgot-password"
+          className="text-xs text-purple-400 hover:underline"
+        >
+          Forgot password?
+        </Link>
       </div>
 
       {error && (
@@ -79,7 +102,7 @@ function LoginForm() {
       )}
 
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log in"}
       </Button>
     </form>
   );
@@ -92,7 +115,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold gradient-text">OpinionX</h1>
           <p className="mt-2 text-sm text-zinc-500">
-            Sign in to vote, create & connect
+            Sign in to vote, create &amp; connect
           </p>
         </div>
 

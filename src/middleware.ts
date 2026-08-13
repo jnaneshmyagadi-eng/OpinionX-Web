@@ -8,6 +8,37 @@ type CookieToSet = {
   options?: any;
 };
 
+/** Paths that must stay out of search indexes */
+function isPrivatePath(path: string): boolean {
+  return (
+    path.startsWith("/login") ||
+    path.startsWith("/signup") ||
+    path.startsWith("/forgot-password") ||
+    path.startsWith("/reset-password") ||
+    path.startsWith("/create") ||
+    path.startsWith("/chat") ||
+    path.startsWith("/notifications") ||
+    path.startsWith("/profile") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/ai") ||
+    path.startsWith("/api/")
+  );
+}
+
+/** Apply robots headers so public pages are indexable */
+function applyRobotsHeader(
+  response: NextResponse,
+  path: string
+): NextResponse {
+  if (isPrivatePath(path)) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  } else {
+    // Explicitly allow indexing — overrides accidental noindex where possible
+    response.headers.set("X-Robots-Tag", "index, follow");
+  }
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -61,16 +92,16 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("redirect", path);
-    return NextResponse.redirect(redirectUrl);
+    return applyRobotsHeader(NextResponse.redirect(redirectUrl), path);
   }
 
   if (user && isAuthPage && !path.startsWith("/reset-password")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
-    return NextResponse.redirect(redirectUrl);
+    return applyRobotsHeader(NextResponse.redirect(redirectUrl), "/");
   }
 
-  return supabaseResponse;
+  return applyRobotsHeader(supabaseResponse, path);
 }
 
 export const config = {

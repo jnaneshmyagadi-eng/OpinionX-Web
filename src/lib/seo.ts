@@ -1,6 +1,11 @@
+/**
+ * Canonical production host.
+ * Prefer the primary Vercel production domain (no platform noindex).
+ * Override with NEXT_PUBLIC_SITE_URL when a custom domain is attached.
+ */
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-  "https://opinionx-web-jnanesh.vercel.app";
+  "https://opinionx-web.vercel.app";
 
 export const SITE_NAME = "OpinionX";
 export const SITE_TAGLINE = "Everyone Has an Opinion";

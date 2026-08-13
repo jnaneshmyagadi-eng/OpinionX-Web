@@ -1,11 +1,13 @@
 {
-  "name": "OpinionX",
+  "name": "OpinionX — Everyone Has an Opinion",
   "short_name": "OpinionX",
-  "description": "Social A/B opinion platform",
+  "description": "OpinionX is a social voting platform for two-choice polls. Vote, create polls, and discover people with similar opinions in India and worldwide.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0b",
   "theme_color": "#0a0a0b",
   "orientation": "portrait",
+  "categories": ["social", "entertainment"],
+  "lang": "en-IN",
   "icons": []
 }

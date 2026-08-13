@@ -43,20 +43,11 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    images: [
-      {
-        url: absoluteUrl("/og.png"),
-        width: 1200,
-        height: 630,
-        alt: "OpinionX — social voting and two-choice polls",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    images: [absoluteUrl("/og.png")],
   },
   robots: {
     index: true,
@@ -74,9 +65,6 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "black-translucent",
     title: SITE_NAME,
-  },
-  other: {
-    "theme-color": "#0a0a0b",
   },
 };
 

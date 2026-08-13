@@ -33,6 +33,9 @@ export const metadata: Metadata = {
   creator: SITE_NAME,
   publisher: SITE_NAME,
   category: "social",
+  verification: {
+    google: "9vfGCrCjFcjkPK-eGVuQZMPhkExrEwlapmOqArF--UI",
+  },
   alternates: {
     canonical: absoluteUrl("/"),
   },

@@ -1,4 +1,5 @@
-import type { Poll, Profile, Vote } from "@/types/database";
+import type { Poll, Profile } from "@/types/database";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Time-decayed engagement score for trending. */
 export function trendingScore(poll: {
@@ -14,7 +15,6 @@ export function trendingScore(poll: {
     votes + poll.like_count * 2 + poll.comment_count * 3 + poll.save_count * 2;
   const ageHours =
     (Date.now() - new Date(poll.created_at).getTime()) / (1000 * 60 * 60);
-  // Half-life ~36h so older viral polls fade
   const decay = Math.pow(0.5, ageHours / 36);
   return engagement * decay;
 }
@@ -32,7 +32,6 @@ export type CategoryOpinion = {
   percentB: number;
 };
 
-/** Aggregate voting patterns by poll category (from joined vote+poll data). */
 export function buildOpinionGraph(
   rows: { choice: "a" | "b"; category: string }[]
 ): {
@@ -73,11 +72,6 @@ export type SimilarUser = Profile & {
   sharedVotes: number;
 };
 
-/**
- * Agreement % from shared polls only (real data, never invented).
- * myVotes: poll_id → choice
- * otherVotes: list of { user_id, poll_id, choice }
- */
 export function rankPeopleLikeYou(
   myVotes: Map<string, "a" | "b">,
   others: { user_id: string; poll_id: string; choice: "a" | "b" }[],
@@ -85,10 +79,7 @@ export function rankPeopleLikeYou(
 ): SimilarUser[] {
   if (myVotes.size === 0) return [];
 
-  const byUser = new Map<
-    string,
-    { agree: number; shared: number }
-  >();
+  const byUser = new Map<string, { agree: number; shared: number }>();
   for (const v of others) {
     const mine = myVotes.get(v.poll_id);
     if (!mine) continue;
@@ -169,15 +160,12 @@ export function summarizeComments(
 }
 
 export async function startOrOpenChat(
-  supabase: {
-    from: (t: string) => any;
-  },
+  supabase: SupabaseClient,
   currentUserId: string,
   otherUserId: string
 ): Promise<string | null> {
   if (currentUserId === otherUserId) return null;
 
-  // Find existing 1:1 conversation
   const { data: myMemberships } = await supabase
     .from("conversation_members")
     .select("conversation_id")

@@ -15,14 +15,22 @@ import { cn, calculatePercentages, formatRelativeTime } from "@/lib/utils";
 import type { PollWithCreator } from "@/types/database";
 import { MOOD_META } from "@/types/database";
 import { Button } from "@/components/ui/button";
+import { VoteConnect } from "@/components/poll/vote-connect";
 
 interface PollCardProps {
   poll: PollWithCreator;
   currentUserId?: string | null;
   onVote?: (pollId: string, choice: "a" | "b") => void;
+  /** Larger mobile “reel” presentation */
+  reel?: boolean;
 }
 
-export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
+export function PollCard({
+  poll,
+  currentUserId,
+  onVote,
+  reel = false,
+}: PollCardProps) {
   const [voted, setVoted] = useState<"a" | "b" | null>(poll.user_vote ?? null);
   const [liked, setLiked] = useState(poll.user_liked ?? false);
   const [saved, setSaved] = useState(poll.user_saved ?? false);
@@ -110,15 +118,19 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
         await navigator.clipboard.writeText(url);
       }
     } catch {
-      /* user cancelled share */
+      /* cancelled */
     }
   }
 
   const creator = poll.profiles;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60">
-      {/* Header */}
+    <article
+      className={cn(
+        "overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60",
+        reel && "snap-start"
+      )}
+    >
       <div className="flex items-center gap-3 px-4 pt-4">
         <Link
           href={`/profile/${creator?.username ?? ""}`}
@@ -152,6 +164,8 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
                 </span>
               </>
             )}
+            {" · "}
+            <span className="capitalize">{poll.category}</span>
           </p>
         </div>
         <button
@@ -162,14 +176,17 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
         </button>
       </div>
 
-      {/* Question */}
       <Link href={`/poll/${poll.id}`} className="block px-4 py-3">
-        <h2 className="text-base font-medium leading-snug text-zinc-100">
+        <h2
+          className={cn(
+            "font-medium leading-snug text-zinc-100",
+            reel ? "text-lg" : "text-base"
+          )}
+        >
           {poll.question}
         </h2>
       </Link>
 
-      {/* Two-image VS layout */}
       {hasImages ? (
         <div className="relative grid grid-cols-2 gap-0.5 px-0.5">
           {(["a", "b"] as const).map((choice) => {
@@ -186,7 +203,8 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
                 disabled={!!voted || loading || !currentUserId}
                 onClick={() => handleVote(choice)}
                 className={cn(
-                  "relative aspect-[3/4] overflow-hidden bg-zinc-800 transition",
+                  "relative overflow-hidden bg-zinc-800 transition",
+                  reel ? "aspect-[3/5]" : "aspect-[3/4]",
                   isSelected && "ring-2 ring-inset ring-purple-500",
                   !voted && currentUserId && "active:opacity-90"
                 )}
@@ -205,7 +223,6 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
                     {label}
                   </div>
                 )}
-                {/* Label + % overlay */}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-10">
                   <p className="text-sm font-semibold text-white drop-shadow">
                     {label}
@@ -237,7 +254,6 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
               </button>
             );
           })}
-          {/* VS badge */}
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-950/90 text-xs font-black text-white ring-2 ring-zinc-700">
               VS
@@ -245,7 +261,6 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
           </div>
         </div>
       ) : (
-        /* Text-only options */
         <div className="space-y-2 px-4 pb-1">
           {(["a", "b"] as const).map((choice) => {
             const isA = choice === "a";
@@ -303,7 +318,17 @@ export function PollCard({ poll, currentUserId, onVote }: PollCardProps) {
         </p>
       )}
 
-      {/* Actions */}
+      {voted && currentUserId && (
+        <div className="px-3">
+          <VoteConnect
+            pollId={poll.id}
+            choice={voted}
+            optionLabel={voted === "a" ? poll.option_a : poll.option_b}
+            currentUserId={currentUserId}
+          />
+        </div>
+      )}
+
       <div className="flex items-center gap-1 border-t border-zinc-800/60 px-2 py-1.5">
         <Button
           variant="ghost"

@@ -6,14 +6,15 @@ import { PollCard } from "@/components/poll/poll-card";
 import type { PollWithCreator } from "@/types/database";
 import { MOODS, MOOD_META } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { sortByTrending } from "@/lib/discovery";
 import { Loader2 } from "lucide-react";
 
-type SortMode = "trending" | "new";
+type FeedTab = "trending" | "for_you" | "new";
 
 export function HomeFeed() {
   const [polls, setPolls] = useState<PollWithCreator[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<SortMode>("trending");
+  const [tab, setTab] = useState<FeedTab>("trending");
   const [moodFilter, setMoodFilter] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -32,9 +33,9 @@ export function HomeFeed() {
           `*, profiles:creator_id (id, username, display_name, avatar_url)`
         )
         .eq("is_active", true)
-        .limit(40);
+        .limit(50);
 
-      if (moodFilter && moodFilter !== "trending") {
+      if (moodFilter) {
         query = query.eq("mood", moodFilter);
       }
 
@@ -48,14 +49,23 @@ export function HomeFeed() {
         profiles: p.profiles as PollWithCreator["profiles"],
       }));
 
-      if (sort === "trending" || moodFilter === "trending") {
-        enriched = [...enriched].sort(
-          (a, b) =>
-            b.vote_count_a +
-            b.vote_count_b +
-            b.like_count * 2 -
-            (a.vote_count_a + a.vote_count_b + a.like_count * 2)
-        );
+      if (tab === "trending") {
+        enriched = sortByTrending(enriched);
+      } else if (tab === "for_you" && user) {
+        const { data: me } = await supabase
+          .from("profiles")
+          .select("moods, categories_interest")
+          .eq("id", user.id)
+          .single();
+        const moods = new Set(me?.moods ?? []);
+        const cats = new Set(me?.categories_interest ?? []);
+        enriched = [...enriched].sort((a, b) => {
+          const score = (p: PollWithCreator) =>
+            (moods.has(p.mood) ? 2 : 0) +
+            (cats.has(p.category) ? 2 : 0) +
+            (p.vote_count_a + p.vote_count_b) * 0.01;
+          return score(b) - score(a);
+        });
       }
 
       if (user) {
@@ -100,7 +110,7 @@ export function HomeFeed() {
     } finally {
       setLoading(false);
     }
-  }, [sort, moodFilter]);
+  }, [tab, moodFilter]);
 
   useEffect(() => {
     loadPolls();
@@ -109,21 +119,24 @@ export function HomeFeed() {
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
-        {(["trending", "new"] as const).map((s) => (
+        {(
+          [
+            { id: "trending" as const, label: "🔥 Trending Now" },
+            { id: "for_you" as const, label: "For You" },
+            { id: "new" as const, label: "New Opinions" },
+          ] as const
+        ).map((t) => (
           <button
-            key={s}
-            onClick={() => {
-              setSort(s);
-              if (s === "trending") setMoodFilter(null);
-            }}
+            key={t.id}
+            onClick={() => setTab(t.id)}
             className={cn(
-              "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium capitalize transition",
-              sort === s && !moodFilter
+              "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition",
+              tab === t.id
                 ? "bg-gradient-to-r from-purple-600 to-pink-500 text-white"
                 : "bg-zinc-800 text-zinc-400 hover:text-white"
             )}
           >
-            {s === "trending" ? "🔥 Trending" : "New"}
+            {t.label}
           </button>
         ))}
       </div>
@@ -162,19 +175,20 @@ export function HomeFeed() {
         </div>
       ) : polls.length === 0 ? (
         <div className="py-16 text-center">
-          <p className="text-zinc-500">No polls yet on OpinionX.</p>
+          <p className="text-zinc-500">No opinions yet on OpinionX.</p>
           <p className="mt-1 text-sm text-zinc-600">
-            Be the first to create a two-choice poll and start a vote.
+            Be the first to ask what people really think.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="snap-y snap-mandatory space-y-4">
           {polls.map((poll) => (
             <PollCard
               key={poll.id}
               poll={poll}
               currentUserId={userId}
               onVote={() => loadPolls()}
+              reel
             />
           ))}
         </div>

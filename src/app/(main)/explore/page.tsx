@@ -3,18 +3,27 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PollCard } from "@/components/poll/poll-card";
+import { PeopleLikeYou } from "@/components/explore/people-like-you";
 import type { PollWithCreator, Profile } from "@/types/database";
-import { calculateVibeMatch } from "@/lib/utils";
+import {
+  rankPeopleLikeYou,
+  sortByTrending,
+  type SimilarUser,
+} from "@/lib/discovery";
 import { Loader2, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { cn, calculatePercentages } from "@/lib/utils";
 import Link from "next/link";
+
+type ExploreTab = "trending" | "new" | "popular";
 
 export default function ExplorePage() {
   const [polls, setPolls] = useState<PollWithCreator[]>([]);
-  const [users, setUsers] = useState<(Profile & { vibe?: number })[]>([]);
+  const [similar, setSimilar] = useState<SimilarUser[]>([]);
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<ExploreTab>("trending");
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userHits, setUserHits] = useState<Profile[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -24,18 +33,6 @@ export default function ExplorePage() {
       } = await supabase.auth.getUser();
       setUserId(user?.id ?? null);
 
-      let moods: string[] = [];
-      let cats: string[] = [];
-      if (user) {
-        const { data: me } = await supabase
-          .from("profiles")
-          .select("moods, categories_interest")
-          .eq("id", user.id)
-          .single();
-        moods = me?.moods ?? [];
-        cats = me?.categories_interest ?? [];
-      }
-
       const { data } = await supabase
         .from("polls")
         .select(
@@ -43,45 +40,116 @@ export default function ExplorePage() {
         )
         .eq("is_active", true)
         .order("created_at", { ascending: false })
-        .limit(40);
+        .limit(60);
 
-      setPolls(
-        (data ?? []).map((p) => ({
-          ...p,
-          profiles: p.profiles as PollWithCreator["profiles"],
-        }))
-      );
-
-      const { data: people } = await supabase
-        .from("profiles")
-        .select("*")
-        .neq("id", user?.id ?? "00000000-0000-0000-0000-000000000000")
-        .limit(20);
-
-      const withVibe = (people ?? []).map((u) => ({
-        ...u,
-        vibe: calculateVibeMatch(
-          moods.length ? moods : ["curious"],
-          cats.length ? cats : ["general"],
-          u.moods ?? [],
-          u.categories_interest ?? []
-        ),
+      let list: PollWithCreator[] = (data ?? []).map((p) => ({
+        ...p,
+        profiles: p.profiles as PollWithCreator["profiles"],
       }));
-      setUsers(withVibe.sort((a, b) => (b.vibe ?? 0) - (a.vibe ?? 0)));
+
+      if (user) {
+        const pollIds = list.map((p) => p.id);
+        if (pollIds.length) {
+          const { data: myVotes } = await supabase
+            .from("votes")
+            .select("poll_id, choice")
+            .eq("user_id", user.id)
+            .in("poll_id", pollIds);
+
+          const voteMap = new Map(
+            (myVotes ?? []).map((v) => [v.poll_id, v.choice as "a" | "b"])
+          );
+          list = list.map((p) => ({
+            ...p,
+            user_vote: voteMap.get(p.id) ?? null,
+          }));
+
+          // People Like You from shared voting history
+          const myMap = new Map(voteMap);
+          if (myMap.size > 0) {
+            const votedPollIds = [...myMap.keys()];
+            const { data: others } = await supabase
+              .from("votes")
+              .select("user_id, poll_id, choice")
+              .in("poll_id", votedPollIds)
+              .neq("user_id", user.id)
+              .limit(500);
+
+            const otherIds = [
+              ...new Set((others ?? []).map((o) => o.user_id)),
+            ];
+            if (otherIds.length) {
+              const { data: profiles } = await supabase
+                .from("profiles")
+                .select("*")
+                .in("id", otherIds);
+              setSimilar(
+                rankPeopleLikeYou(
+                  myMap,
+                  (others ?? []).map((o) => ({
+                    user_id: o.user_id,
+                    poll_id: o.poll_id,
+                    choice: o.choice as "a" | "b",
+                  })),
+                  profiles ?? []
+                )
+              );
+            }
+          }
+        }
+      }
+
+      setPolls(list);
       setLoading(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = query
-    ? polls.filter(
-        (p) =>
-          p.question.toLowerCase().includes(query.toLowerCase()) ||
-          p.option_a.toLowerCase().includes(query.toLowerCase()) ||
-          p.option_b.toLowerCase().includes(query.toLowerCase())
-      )
-    : polls;
+  useEffect(() => {
+    async function searchUsers() {
+      if (!query.trim()) {
+        setUserHits([]);
+        return;
+      }
+      const q = query.trim().toLowerCase();
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
+        .limit(8);
+      setUserHits(data ?? []);
+    }
+    const t = setTimeout(searchUsers, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  let display = [...polls];
+  if (tab === "trending") display = sortByTrending(display);
+  else if (tab === "popular") {
+    display.sort(
+      (a, b) =>
+        b.vote_count_a +
+        b.vote_count_b +
+        b.like_count -
+        (a.vote_count_a + a.vote_count_b + a.like_count)
+    );
+  }
+
+  if (query.trim()) {
+    const q = query.toLowerCase();
+    display = display.filter(
+      (p) =>
+        p.question.toLowerCase().includes(q) ||
+        p.option_a.toLowerCase().includes(q) ||
+        p.option_b.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.mood.toLowerCase().includes(q)
+    );
+  }
+
+  const trendingPreview = sortByTrending(polls).slice(0, 5);
 
   return (
     <div className="px-3 py-4">
@@ -90,67 +158,109 @@ export default function ExplorePage() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search polls…"
+          placeholder="Search polls, categories, people…"
           className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-zinc-600 focus:border-purple-500 focus:outline-none"
         />
       </div>
 
-      {users.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            People with your vibe
-          </h2>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {users.slice(0, 10).map((u) => (
-              <Link
-                key={u.id}
-                href={`/profile/${u.username}`}
-                className="flex w-28 shrink-0 flex-col items-center rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 text-center"
-              >
-                <div className="mb-2 flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-lg font-bold">
-                  {u.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={u.avatar_url}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    u.username[0].toUpperCase()
-                  )}
-                </div>
-                <p className="truncate text-xs font-medium text-white">
+      {userHits.length > 0 && (
+        <div className="mb-4 space-y-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-2">
+          {userHits.map((u) => (
+            <Link
+              key={u.id}
+              href={`/profile/${u.username}`}
+              className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-zinc-800"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-xs font-bold">
+                {u.username[0].toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm text-white">
                   {u.display_name || u.username}
                 </p>
-                <p className="mt-0.5 text-[10px] font-semibold text-pink-400">
-                  {u.vibe}% Vibe Match
-                </p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="mt-2 h-7 px-2 text-[10px]"
-                >
-                  Say Hi
-                </Button>
-              </Link>
-            ))}
-          </div>
-        </section>
+                <p className="text-xs text-zinc-500">@{u.username}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
       )}
 
+      {!query && (
+        <>
+          <section className="mb-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+              🔥 Trending Now
+            </h2>
+            <div className="space-y-2">
+              {trendingPreview.map((p, i) => {
+                const { percentA, total } = calculatePercentages(
+                  p.vote_count_a,
+                  p.vote_count_b
+                );
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/poll/${p.id}`}
+                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition hover:border-zinc-700"
+                  >
+                    <span className="text-lg font-black text-zinc-600">
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white">
+                        {p.question}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {total} votes · A {percentA}% · {" "}
+                        <span className="capitalize">{p.category}</span>
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
+          <PeopleLikeYou users={similar} currentUserId={userId} />
+        </>
+      )}
+
+      <div className="mb-3 flex gap-2 overflow-x-auto">
+        {(
+          [
+            { id: "trending" as const, label: "🔥 Trending" },
+            { id: "popular" as const, label: "🌎 Popular" },
+            { id: "new" as const, label: "🆕 New" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium",
+              tab === t.id
+                ? "bg-purple-600 text-white"
+                : "bg-zinc-800 text-zinc-400"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-        Discover polls
+        Discover opinions
       </h2>
 
       {loading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : display.length === 0 ? (
         <p className="py-16 text-center text-zinc-500">No polls found</p>
       ) : (
         <div className="space-y-4">
-          {filtered.map((poll) => (
+          {display.map((poll) => (
             <PollCard key={poll.id} poll={poll} currentUserId={userId} />
           ))}
         </div>

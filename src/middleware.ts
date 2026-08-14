@@ -8,7 +8,6 @@ type CookieToSet = {
   options?: any;
 };
 
-/** Paths that must stay out of search indexes */
 function isPrivatePath(path: string): boolean {
   return (
     path.startsWith("/login") ||
@@ -25,7 +24,6 @@ function isPrivatePath(path: string): boolean {
   );
 }
 
-/** Apply robots headers so public pages are indexable */
 function applyRobotsHeader(
   response: NextResponse,
   path: string
@@ -33,10 +31,25 @@ function applyRobotsHeader(
   if (isPrivatePath(path)) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
   } else {
-    // Explicitly allow indexing — overrides accidental noindex where possible
     response.headers.set("X-Robots-Tag", "index, follow");
   }
   return response;
+}
+
+/**
+ * When creating a NEW response (e.g. redirect), Supabase auth cookies from
+ * supabaseResponse MUST be copied over. Dropping them causes the browser and
+ * server to go out of sync and the session appears lost on the next request.
+ * @see https://supabase.com/docs/guides/auth/server-side/creating-a-client
+ */
+function copyAuthCookies(
+  from: NextResponse,
+  to: NextResponse
+): NextResponse {
+  from.cookies.getAll().forEach((cookie) => {
+    to.cookies.set(cookie.name, cookie.value);
+  });
+  return to;
 }
 
 export async function middleware(request: NextRequest) {
@@ -56,7 +69,7 @@ export async function middleware(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet: CookieToSet[]) {
+      setAll(cookiesToSet: CookieToSet[], headers?: Record<string, string>) {
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
@@ -66,10 +79,17 @@ export async function middleware(request: NextRequest) {
         cookiesToSet.forEach(({ name, value, options }) => {
           supabaseResponse.cookies.set(name, value, options);
         });
+        if (headers) {
+          Object.entries(headers).forEach(([k, v]) => {
+            supabaseResponse.headers.set(k, v);
+          });
+        }
       },
     },
   });
 
+  // Do not run code between createServerClient and getUser().
+  // getUser() validates the JWT and triggers token refresh via setAll.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -92,15 +112,20 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("redirect", path);
-    return applyRobotsHeader(NextResponse.redirect(redirectUrl), path);
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    copyAuthCookies(supabaseResponse, redirectResponse);
+    return applyRobotsHeader(redirectResponse, path);
   }
 
   if (user && isAuthPage && !path.startsWith("/reset-password")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
-    return applyRobotsHeader(NextResponse.redirect(redirectUrl), "/");
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    copyAuthCookies(supabaseResponse, redirectResponse);
+    return applyRobotsHeader(redirectResponse, "/");
   }
 
+  // IMPORTANT: return supabaseResponse so refreshed auth cookies reach the browser
   return applyRobotsHeader(supabaseResponse, path);
 }
 

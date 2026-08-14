@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
@@ -12,13 +11,14 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     if (username.length < 3) {
       setError("Username must be at least 3 characters");
       return;
@@ -29,21 +29,39 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const cleanUsername = username
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, "");
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            username: username.toLowerCase().replace(/[^a-z0-9_]/g, ""),
+            username: cleanUsername,
             display_name: username,
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
         },
       });
-      if (error) throw error;
-      if (data.user) {
-        router.push("/");
-        router.refresh();
+      if (signUpError) throw signUpError;
+
+      // Session is present when email confirmation is disabled (or auto-confirmed).
+      // Without a session, the user must confirm email before they can use protected routes.
+      if (data.session) {
+        // Full navigation so middleware + cookies are in sync (avoid router.push race).
+        window.location.assign("/");
+        return;
       }
+
+      if (data.user) {
+        setInfo(
+          "Account created. Check your email to confirm, then sign in to create polls."
+        );
+        return;
+      }
+
+      setError("Signup failed. Please try again.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {
@@ -120,6 +138,11 @@ export default function SignupPage() {
               {error}
             </p>
           )}
+          {info && (
+            <p className="rounded-lg bg-purple-500/10 px-3 py-2 text-sm text-purple-300">
+              {info}
+            </p>
+          )}
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? (
@@ -132,7 +155,10 @@ export default function SignupPage() {
 
         <p className="mt-6 text-center text-sm text-zinc-500">
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-purple-400 hover:underline">
+          <Link
+            href="/login"
+            className="font-medium text-purple-400 hover:underline"
+          >
             Sign in
           </Link>
         </p>

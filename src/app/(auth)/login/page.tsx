@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Loader2, Eye, EyeOff } from "lucide-react";
@@ -13,7 +13,6 @@ function LoginForm() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
   const supabase = createClient();
@@ -23,16 +22,25 @@ function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) {
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+      if (signInError) {
         setError("Email or password is incorrect.");
         return;
       }
-      router.push(redirect);
-      router.refresh();
+      if (!data.session) {
+        setError("Could not start a session. Please try again.");
+        return;
+      }
+      // Full page load so auth cookies are present for middleware on /create etc.
+      const safeRedirect =
+        redirect.startsWith("/") && !redirect.startsWith("//")
+          ? redirect
+          : "/";
+      window.location.assign(safeRedirect);
     } catch {
       setError("Email or password is incorrect.");
     } finally {
@@ -81,7 +89,11 @@ function LoginForm() {
             className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500"
             aria-label={showPw ? "Hide password" : "Show password"}
           >
-            {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showPw ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>

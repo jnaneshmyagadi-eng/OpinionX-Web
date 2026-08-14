@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import { PollCard } from "@/components/poll/poll-card";
 import type { PollWithCreator, CommentWithAuthor } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Sparkles } from "lucide-react";
 import { formatRelativeTime } from "@/lib/utils";
+import { summarizeComments } from "@/lib/discovery";
 
 export default function PollDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,7 @@ export default function PollDetailPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -73,12 +75,24 @@ export default function PollDetailPage() {
         .eq("poll_id", id)
         .order("created_at", { ascending: true });
 
-      setComments(
-        (c ?? []).map((cm) => ({
-          ...cm,
-          profiles: cm.profiles as CommentWithAuthor["profiles"],
-        }))
-      );
+      const mapped = (c ?? []).map((cm) => ({
+        ...cm,
+        profiles: cm.profiles as CommentWithAuthor["profiles"],
+      }));
+      setComments(mapped);
+
+      if (p) {
+        setSummary(
+          summarizeComments(
+            mapped,
+            p.option_a,
+            p.option_b,
+            p.vote_count_a,
+            p.vote_count_b
+          )
+        );
+      }
+
       setLoading(false);
     }
     load();
@@ -99,11 +113,23 @@ export default function PollDetailPage() {
         .select(`*, profiles:user_id (id, username, display_name, avatar_url)`)
         .single();
       if (error) throw error;
-      setComments((prev) => [
-        ...prev,
+      const next = [
+        ...comments,
         { ...data, profiles: data.profiles as CommentWithAuthor["profiles"] },
-      ]);
+      ];
+      setComments(next);
       setNewComment("");
+      if (poll) {
+        setSummary(
+          summarizeComments(
+            next,
+            poll.option_a,
+            poll.option_b,
+            poll.vote_count_a,
+            poll.vote_count_b
+          )
+        );
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -128,6 +154,20 @@ export default function PollDetailPage() {
   return (
     <div className="px-3 py-4">
       <PollCard poll={poll} currentUserId={userId} />
+
+      {summary && (
+        <section className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+            <Sparkles className="h-4 w-4 text-purple-400" />
+            What people are saying
+          </h2>
+          <p className="text-sm leading-relaxed text-zinc-300">{summary}</p>
+          <p className="mt-2 text-[10px] text-zinc-600">
+            Summary is built only from vote counts and real comments — no
+            invented reasons.
+          </p>
+        </section>
+      )}
 
       <section className="mt-6">
         <h2 className="mb-3 text-sm font-semibold text-zinc-400">

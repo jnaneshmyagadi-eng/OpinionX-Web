@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Poll } from "@/types/database";
 import { Button } from "@/components/ui/button";
+import { OpinionGraph } from "@/components/profile/opinion-graph";
+import { buildOpinionGraph, type CategoryOpinion } from "@/lib/discovery";
 import { Loader2, Settings } from "lucide-react";
 import Link from "next/link";
 
@@ -14,8 +16,10 @@ export default function ProfilePage() {
   const [savedPolls, setSavedPolls] = useState<Poll[]>([]);
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
+  const [voteCount, setVoteCount] = useState(0);
+  const [opinionCats, setOpinionCats] = useState<CategoryOpinion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"created" | "saved">("created");
+  const [tab, setTab] = useState<"created" | "saved" | "opinion">("created");
   const router = useRouter();
   const supabase = createClient();
 
@@ -62,7 +66,8 @@ export default function ProfilePage() {
 
       const saved: Poll[] = [];
       for (const row of saves ?? []) {
-        const joined = (row as unknown as { polls: Poll | Poll[] | null }).polls;
+        const joined = (row as unknown as { polls: Poll | Poll[] | null })
+          .polls;
         if (Array.isArray(joined)) {
           if (joined[0]) saved.push(joined[0]);
         } else if (joined) {
@@ -70,6 +75,34 @@ export default function ProfilePage() {
         }
       }
       setSavedPolls(saved);
+
+      // Opinion graph from votes + poll categories (private to this user)
+      const { data: myVotes } = await supabase
+        .from("votes")
+        .select("choice, poll_id")
+        .eq("user_id", user.id);
+
+      setVoteCount(myVotes?.length ?? 0);
+
+      if (myVotes?.length) {
+        const pids = myVotes.map((v) => v.poll_id);
+        const { data: votedPolls } = await supabase
+          .from("polls")
+          .select("id, category")
+          .in("id", pids);
+
+        const catById = new Map(
+          (votedPolls ?? []).map((vp) => [vp.id, vp.category])
+        );
+        const rows = myVotes
+          .map((v) => ({
+            choice: v.choice as "a" | "b",
+            category: catById.get(v.poll_id) ?? "general",
+          }))
+          .filter((r) => r.category);
+        const graph = buildOpinionGraph(rows);
+        setOpinionCats(graph.categories);
+      }
 
       setLoading(false);
     }
@@ -111,7 +144,11 @@ export default function ProfilePage() {
           {profile.bio && (
             <p className="mt-2 text-sm text-zinc-300">{profile.bio}</p>
           )}
-          <div className="mt-3 flex gap-4 text-sm">
+          <div className="mt-3 flex flex-wrap gap-4 text-sm">
+            <span>
+              <strong className="text-white">{voteCount}</strong>{" "}
+              <span className="text-zinc-500">votes</span>
+            </span>
             <span>
               <strong className="text-white">{polls.length}</strong>{" "}
               <span className="text-zinc-500">polls</span>
@@ -141,8 +178,12 @@ export default function ProfilePage() {
         </Link>
       </div>
 
+      <div className="mt-6">
+        <OpinionGraph categories={opinionCats} totalVotes={voteCount} compact />
+      </div>
+
       <div className="mt-6 flex border-b border-zinc-800">
-        {(["created", "saved"] as const).map((t) => (
+        {(["created", "saved", "opinion"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -152,55 +193,62 @@ export default function ProfilePage() {
                 : "text-zinc-500"
             }`}
           >
-            {t}
+            {t === "opinion" ? "My Opinion" : t}
           </button>
         ))}
       </div>
 
-      <div className="mt-4 space-y-3">
-        {list.length === 0 ? (
-          <p className="py-10 text-center text-zinc-500">
-            {tab === "created" ? "No polls yet" : "No saved polls"}
-          </p>
-        ) : (
-          list.map((p) => (
-            <Link
-              key={p.id}
-              href={`/poll/${p.id}`}
-              className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition hover:border-zinc-700"
-            >
-              {(p.image_a_url || p.image_b_url) && (
-                <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg">
-                  {p.image_a_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={p.image_a_url}
-                      alt=""
-                      className="h-full w-1/2 object-cover"
-                    />
-                  )}
-                  {p.image_b_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={p.image_b_url}
-                      alt=""
-                      className="h-full w-1/2 object-cover"
-                    />
-                  )}
+      {tab === "opinion" ? (
+        <div className="mt-4">
+          <OpinionGraph categories={opinionCats} totalVotes={voteCount} />
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {list.length === 0 ? (
+            <p className="py-10 text-center text-zinc-500">
+              {tab === "created" ? "No polls yet" : "No saved polls"}
+            </p>
+          ) : (
+            list.map((p) => (
+              <Link
+                key={p.id}
+                href={`/poll/${p.id}`}
+                className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition hover:border-zinc-700"
+              >
+                {(p.image_a_url || p.image_b_url) && (
+                  <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg">
+                    {p.image_a_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image_a_url}
+                        alt=""
+                        className="h-full w-1/2 object-cover"
+                      />
+                    )}
+                    {p.image_b_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image_b_url}
+                        alt=""
+                        className="h-full w-1/2 object-cover"
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-white">
+                    {p.question}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {p.vote_count_a + p.vote_count_b} votes · {p.like_count}{" "}
+                    likes
+                  </p>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {p.question}
-                </p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  {p.vote_count_a + p.vote_count_b} votes · {p.like_count} likes
-                </p>
-              </div>
-            </Link>
-          ))
-        )}
-      </div>
+              </Link>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

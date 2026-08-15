@@ -118,7 +118,7 @@ export function HomeFeed() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1">
         {(
           [
             { id: "trending" as const, label: "🔥 Trending Now" },
@@ -141,7 +141,7 @@ export function HomeFeed() {
         ))}
       </div>
 
-      <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setMoodFilter(null)}
           className={cn(

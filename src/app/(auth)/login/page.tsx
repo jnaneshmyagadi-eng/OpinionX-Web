@@ -35,7 +35,6 @@ function LoginForm() {
         setError("Could not start a session. Please try again.");
         return;
       }
-      // Full page load so auth cookies are present for middleware on /create etc.
       const safeRedirect =
         redirect.startsWith("/") && !redirect.startsWith("//")
           ? redirect
@@ -120,6 +119,20 @@ function LoginForm() {
   );
 }
 
+function SignupLink() {
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect");
+  const href =
+    redirect && redirect.startsWith("/") && !redirect.startsWith("//")
+      ? `/signup?redirect=${encodeURIComponent(redirect)}`
+      : "/signup";
+  return (
+    <Link href={href} className="font-medium text-purple-400 hover:underline">
+      Sign up
+    </Link>
+  );
+}
+
 export default function LoginPage() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-zinc-950 px-4">
@@ -143,12 +156,9 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-zinc-500">
           Don&apos;t have an account?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-purple-400 hover:underline"
-          >
-            Sign up
-          </Link>
+          <Suspense fallback={null}>
+            <SignupLink />
+          </Suspense>
         </p>
       </div>
     </div>

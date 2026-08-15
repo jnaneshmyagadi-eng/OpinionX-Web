@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { PollCard } from "@/components/poll/poll-card";
+import { PollCard, PENDING_VOTE_KEY } from "@/components/poll/poll-card";
 import type { PollWithCreator, CommentWithAuthor } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Loader2, Send, Sparkles } from "lucide-react";
@@ -19,6 +19,7 @@ export default function PollDetailPage() {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
+  const pendingApplied = useRef(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -65,6 +66,37 @@ export default function PollDetailPage() {
           enriched.user_vote = (v.data?.choice as "a" | "b") ?? null;
           enriched.user_liked = !!l.data;
           enriched.user_saved = !!s.data;
+
+          // Complete pending vote from pre-auth tap (once)
+          if (!enriched.user_vote && !pendingApplied.current) {
+            let pending: string | null = null;
+            try {
+              pending = sessionStorage.getItem(PENDING_VOTE_KEY(id));
+            } catch {
+              pending = null;
+            }
+            if (pending === "a" || pending === "b") {
+              pendingApplied.current = true;
+              try {
+                sessionStorage.removeItem(PENDING_VOTE_KEY(id));
+              } catch {
+                /* ignore */
+              }
+              const { error } = await supabase.from("votes").insert({
+                poll_id: id,
+                user_id: user.id,
+                choice: pending,
+              });
+              if (!error) {
+                enriched.user_vote = pending;
+                if (pending === "a") {
+                  enriched.vote_count_a = (enriched.vote_count_a ?? 0) + 1;
+                } else {
+                  enriched.vote_count_b = (enriched.vote_count_b ?? 0) + 1;
+                }
+              }
+            }
+          }
         }
         setPoll(enriched);
       }

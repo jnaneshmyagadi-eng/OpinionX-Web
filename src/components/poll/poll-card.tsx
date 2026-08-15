@@ -9,6 +9,7 @@ import {
   Bookmark,
   Share2,
   MoreHorizontal,
+  Check,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn, calculatePercentages, formatRelativeTime } from "@/lib/utils";
@@ -17,12 +18,28 @@ import { MOOD_META } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { VoteConnect } from "@/components/poll/vote-connect";
 
+const PENDING_VOTE_KEY = (pollId: string) => `pending_vote_${pollId}`;
+
 interface PollCardProps {
   poll: PollWithCreator;
   currentUserId?: string | null;
   onVote?: (pollId: string, choice: "a" | "b") => void;
   /** Larger mobile “reel” presentation */
   reel?: boolean;
+}
+
+function buildShareText(
+  optionA: string,
+  optionB: string,
+  percentA: number,
+  percentB: number,
+  total: number,
+  url: string
+): string {
+  if (total > 0) {
+    return `India is split: ${percentA}% chose ${optionA} vs ${percentB}% ${optionB}. What would you choose?\n${url}`;
+  }
+  return `What would you choose?\n${optionA} vs ${optionB}\n${url}`;
 }
 
 export function PollCard({
@@ -40,16 +57,50 @@ export function PollCard({
     likes: poll.like_count,
   });
   const [loading, setLoading] = useState(false);
+  const [showSharePanel, setShowSharePanel] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { percentA, percentB, total } = calculatePercentages(counts.a, counts.b);
   const supabase = createClient();
   const hasImages = !!(poll.image_a_url || poll.image_b_url);
-  const showResults = voted !== null;
+  // Show live results to everyone when votes exist OR after the user has voted
+  const showResults = voted !== null || total > 0;
   const moodKey = poll.mood as keyof typeof MOOD_META;
   const moodMeta = MOOD_META[moodKey];
 
+  function getPollUrl() {
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}/poll/${poll.id}`;
+    }
+    return `/poll/${poll.id}`;
+  }
+
+  function getShareText() {
+    return buildShareText(
+      poll.option_a,
+      poll.option_b,
+      percentA,
+      percentB,
+      total,
+      getPollUrl()
+    );
+  }
+
   async function handleVote(choice: "a" | "b") {
-    if (!currentUserId || voted || loading) return;
+    if (voted || loading) return;
+
+    // Logged-out: store intent and send to signup (auth still required to write vote)
+    if (!currentUserId) {
+      try {
+        sessionStorage.setItem(PENDING_VOTE_KEY(poll.id), choice);
+      } catch {
+        /* private mode */
+      }
+      const redirect = encodeURIComponent(`/poll/${poll.id}`);
+      window.location.assign(`/signup?redirect=${redirect}`);
+      return;
+    }
+
     setLoading(true);
     try {
       const { error } = await supabase.from("votes").insert({
@@ -64,6 +115,7 @@ export function PollCard({
         a: choice === "a" ? c.a + 1 : c.a,
         b: choice === "b" ? c.b + 1 : c.b,
       }));
+      setShowSharePanel(true);
       onVote?.(poll.id, choice);
     } catch (e) {
       console.error(e);
@@ -109,16 +161,47 @@ export function PollCard({
     }
   }
 
-  async function handleShare() {
-    const url = `${window.location.origin}/poll/${poll.id}`;
+  async function handleNativeShare() {
+    const url = getPollUrl();
+    const text = getShareText();
     try {
       if (navigator.share) {
-        await navigator.share({ title: poll.question, url });
+        await navigator.share({ title: poll.question, text, url });
       } else {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       }
     } catch {
       /* cancelled */
+    }
+  }
+
+  function shareWhatsApp() {
+    const text = getShareText();
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  function shareX() {
+    const text = getShareText();
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  async function copyResult() {
+    try {
+      await navigator.clipboard.writeText(getShareText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -200,13 +283,13 @@ export function PollCard({
               <button
                 key={choice}
                 type="button"
-                disabled={!!voted || loading || !currentUserId}
+                disabled={!!voted || loading}
                 onClick={() => handleVote(choice)}
                 className={cn(
                   "relative overflow-hidden bg-zinc-800 transition",
                   reel ? "aspect-[3/5]" : "aspect-[3/4]",
                   isSelected && "ring-2 ring-inset ring-purple-500",
-                  !voted && currentUserId && "active:opacity-90"
+                  !voted && "active:opacity-90"
                 )}
                 aria-label={`Vote for ${label}`}
               >
@@ -272,7 +355,7 @@ export function PollCard({
               <button
                 key={choice}
                 type="button"
-                disabled={!!voted || loading || !currentUserId}
+                disabled={!!voted || loading}
                 onClick={() => handleVote(choice)}
                 className={cn(
                   "relative w-full overflow-hidden rounded-xl border text-left transition-all",
@@ -318,6 +401,12 @@ export function PollCard({
         </p>
       )}
 
+      {!currentUserId && !voted && (
+        <p className="px-4 pt-1 text-center text-[11px] text-zinc-500">
+          Tap a side to vote — sign up takes seconds
+        </p>
+      )}
+
       {voted && currentUserId && (
         <div className="px-3">
           <VoteConnect
@@ -326,6 +415,44 @@ export function PollCard({
             optionLabel={voted === "a" ? poll.option_a : poll.option_b}
             currentUserId={currentUserId}
           />
+        </div>
+      )}
+
+      {/* Post-vote / result share panel */}
+      {(showSharePanel || voted) && (
+        <div className="mx-3 mb-2 mt-2 rounded-xl border border-purple-500/30 bg-purple-500/10 p-3">
+          <p className="mb-2 text-center text-xs font-medium text-purple-200">
+            Share the split
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={shareWhatsApp}
+              className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white active:opacity-90"
+            >
+              WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={shareX}
+              className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-900 active:opacity-90"
+            >
+              Post on X
+            </button>
+            <button
+              type="button"
+              onClick={copyResult}
+              className="rounded-full border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 active:opacity-90"
+            >
+              {copied ? (
+                <span className="inline-flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Copied
+                </span>
+              ) : (
+                "Copy result"
+              )}
+            </button>
+          </div>
         </div>
       )}
 
@@ -363,7 +490,10 @@ export function PollCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleShare}
+          onClick={() => {
+            setShowSharePanel(true);
+            void handleNativeShare();
+          }}
           className="ml-auto"
           aria-label="Share"
         >
@@ -373,3 +503,5 @@ export function PollCard({
     </article>
   );
 }
+
+export { PENDING_VOTE_KEY };

@@ -10,8 +10,6 @@ const nextConfig: NextConfig = {
     ],
   },
   async headers() {
-    // Public pages: explicitly allow indexing at the CDN/edge layer.
-    // Private app areas keep noindex.
     return [
       {
         source: "/",
@@ -64,6 +62,35 @@ const nextConfig: NextConfig = {
       {
         source: "/profile/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+      {
+        source: "/manifest.json",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400",
+          },
+          { key: "Content-Type", value: "application/manifest+json" },
+        ],
+      },
+      {
+        source: "/icons/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
     ];
   },

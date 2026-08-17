@@ -1,13 +1,55 @@
 {
   "name": "OpinionX — Everyone Has an Opinion",
   "short_name": "OpinionX",
-  "description": "OpinionX is a social voting platform for two-choice polls. Vote, create polls, and discover people with similar opinions in India and worldwide.",
-  "start_url": "/",
+  "description": "Vote on two-choice polls, see what people really think, create opinions, and discover people like you.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#0a0a0b",
   "theme_color": "#0a0a0b",
-  "orientation": "portrait",
-  "categories": ["social", "entertainment"],
   "lang": "en-IN",
-  "icons": []
+  "dir": "ltr",
+  "categories": ["social", "entertainment", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create poll",
+      "short_name": "Create",
+      "url": "/create",
+      "description": "Create a new opinion poll"
+    },
+    {
+      "name": "Explore",
+      "short_name": "Explore",
+      "url": "/explore",
+      "description": "Discover trending opinions"
+    }
+  ],
+  "id": "/"
 }

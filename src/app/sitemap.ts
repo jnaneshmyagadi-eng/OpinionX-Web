@@ -1,21 +1,37 @@
 import type { MetadataRoute } from "next";
 import { createClient } from "@supabase/supabase-js";
-import { SITE_URL } from "@/lib/seo";
+import { SITE_URL, SEO_CATEGORIES } from "@/lib/seo";
+
+export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const now = new Date();
+
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: SITE_URL,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: "hourly",
       priority: 1,
     },
     {
       url: `${SITE_URL}/explore`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: "hourly",
       priority: 0.9,
     },
+    {
+      url: `${SITE_URL}/polls`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.85,
+    },
+    ...SEO_CATEGORIES.map((c) => ({
+      url: `${SITE_URL}/polls/${c.slug}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.8,
+    })),
   ];
 
   const pollRoutes: MetadataRoute.Sitemap = [];
@@ -30,7 +46,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .select("id, updated_at, created_at")
         .eq("is_active", true)
         .order("created_at", { ascending: false })
-        .limit(1000);
+        .limit(2000);
 
       for (const p of polls ?? []) {
         pollRoutes.push({
@@ -42,7 +58,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch {
-    // Sitemap still returns static routes if DB is unavailable at build time
+    // Static routes still returned if DB unavailable
   }
 
   return [...staticRoutes, ...pollRoutes];

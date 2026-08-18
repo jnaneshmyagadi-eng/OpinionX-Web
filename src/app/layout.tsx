@@ -102,7 +102,6 @@ const jsonLd = {
       url: SITE_URL,
       description: SITE_DESCRIPTION,
       slogan: SITE_TAGLINE,
-      sameAs: [],
     },
     {
       "@type": "WebSite",

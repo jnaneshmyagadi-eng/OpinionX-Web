@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadImage, validateImageFile } from "@/lib/upload";
 import { Button } from "@/components/ui/button";
@@ -10,6 +9,11 @@ import { CATEGORIES, MOODS, MOOD_META } from "@/types/database";
 import { Loader2, ImagePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Auth gate is middleware only.
+ * This page assumes the user already passed /create protection.
+ * On publish we still resolve user id from the shared cookie session.
+ */
 function CreatePollForm() {
   const searchParams = useSearchParams();
   const prefillQ = searchParams.get("q") ?? "";
@@ -77,9 +81,11 @@ function CreatePollForm() {
     try {
       const {
         data: { user },
+        error: userErr,
       } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/login?redirect=/create");
+      if (userErr || !user) {
+        // Session missing despite middleware — force re-auth once
+        window.location.assign("/login?redirect=/create");
         return;
       }
 
@@ -132,7 +138,6 @@ function CreatePollForm() {
           </p>
         </div>
 
-        {/* Two-image upload */}
         <div>
           <label className="mb-2 block text-sm text-zinc-400">
             Images (optional but recommended)
@@ -173,7 +178,9 @@ function CreatePollForm() {
                         className="flex flex-col items-center gap-2 p-4 text-zinc-500"
                       >
                         <ImagePlus className="h-8 w-8" />
-                        <span className="text-xs">Image {side.toUpperCase()}</span>
+                        <span className="text-xs">
+                          Image {side.toUpperCase()}
+                        </span>
                       </button>
                     )}
                     <input

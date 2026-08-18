@@ -3,12 +3,11 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
 function mapAuthError(message: string): string {
-  const m = message.toLowerCase();
+  const m = (message || "").toLowerCase();
   if (m.includes("email not confirmed") || m.includes("not confirmed")) {
     return "Confirm your email first. Check your inbox (and spam) for the OpinionX link.";
   }
@@ -21,7 +20,6 @@ function mapAuthError(message: string): string {
   if (m.includes("user not found")) {
     return "No account with that email. Sign up first.";
   }
-  // Surface real message — never hide every failure as wrong password
   return message || "Could not sign in. Please try again.";
 }
 
@@ -34,47 +32,37 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
   const urlError = searchParams.get("error");
-  const supabase = createClient();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const trimmedEmail = email.trim().toLowerCase();
-      const { data, error: signInError } =
-        await supabase.auth.signInWithPassword({
-          email: trimmedEmail,
+      const res = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
           password,
-        });
-      if (signInError) {
-        setError(mapAuthError(signInError.message));
-        return;
-      }
-      if (!data.session) {
-        setError("Could not start a session. Please try again.");
-        return;
-      }
-      // Confirm cookies are readable before navigating
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        setError("Session could not be saved. Allow cookies and try again.");
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+      };
+      if (!res.ok) {
+        setError(mapAuthError(payload.error || "Could not sign in."));
         return;
       }
       const safeRedirect =
         redirect.startsWith("/") && !redirect.startsWith("//")
           ? redirect
           : "/";
-      // Full page load so middleware sees auth cookies on the next request
+      // Full navigation so middleware reads the new Set-Cookie session
       window.location.assign(safeRedirect);
-    } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? mapAuthError(err.message)
-          : "Could not sign in. Please try again."
-      );
+    } catch {
+      setError("Network error. Check your connection and try again.");
     } finally {
       setLoading(false);
     }

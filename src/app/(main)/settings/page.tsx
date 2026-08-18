@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import {
   User,
   Lock,
@@ -43,14 +42,15 @@ const SECTIONS = [
 export default function SettingsPage() {
   const [confirmOut, setConfirmOut] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const supabase = createClient();
 
   async function logout() {
     setLoggingOut(true);
     try {
-      await supabase.auth.signOut();
+      await fetch("/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
     } finally {
-      // Full navigation so middleware and cookies stay in sync
       window.location.assign("/login");
     }
   }

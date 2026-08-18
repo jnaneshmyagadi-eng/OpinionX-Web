@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -16,7 +15,6 @@ function SignupForm() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
-  const supabase = createClient();
 
   const safeRedirect =
     redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/";
@@ -35,55 +33,40 @@ function SignupForm() {
     }
     setLoading(true);
     try {
-      const cleanUsername = username
-        .toLowerCase()
-        .replace(/[^a-z0-9_]/g, "");
-      const trimmedEmail = email.trim().toLowerCase();
-
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: trimmedEmail,
-        password,
-        options: {
-          data: {
-            username: cleanUsername,
-            display_name: username.trim(),
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeRedirect)}`,
-        },
+      const res = await fetch("/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+          username: username.trim(),
+        }),
       });
-      if (signUpError) throw signUpError;
-
-      // Session present = email confirmation disabled (or auto-confirm)
-      if (data.session) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          setError(
-            "Account created but session was not saved. Allow cookies, then log in."
-          );
-          return;
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        needsEmailConfirm?: boolean;
+      };
+      if (!res.ok) {
+        const msg = payload.error || "Signup failed";
+        if (msg.toLowerCase().includes("already registered")) {
+          setError("This email is already registered. Log in instead.");
+        } else {
+          setError(msg);
         }
-        window.location.assign(safeRedirect);
         return;
       }
-
-      // User created but no session = email confirmation required
-      if (data.user) {
+      if (payload.needsEmailConfirm) {
         setInfo(
           "Account created. Confirm your email (check spam), then log in with the same password."
         );
         return;
       }
-
-      setError("Signup failed. Please try again.");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Signup failed";
-      if (msg.toLowerCase().includes("already registered")) {
-        setError("This email is already registered. Log in instead.");
-      } else {
-        setError(msg);
-      }
+      // Session cookies are on this response — hard navigate so middleware sees them
+      window.location.assign(safeRedirect);
+    } catch {
+      setError("Network error. Check your connection and try again.");
     } finally {
       setLoading(false);
     }

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Build redirect response first; attach cookies to THIS object
-  let redirectResponse = NextResponse.redirect(`${origin}${next}`);
+  const redirectResponse = NextResponse.redirect(`${origin}${next}`);
 
   const supabase = createServerClient(url, key, {
     cookies: {

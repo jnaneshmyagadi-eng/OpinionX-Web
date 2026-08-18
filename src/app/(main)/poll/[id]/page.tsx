@@ -8,7 +8,6 @@ import {
   SITE_NAME,
   SITE_URL,
   truncateMeta,
-  getSeoCategory,
   SEO_CATEGORIES,
 } from "@/lib/seo";
 
@@ -122,6 +121,11 @@ export default async function PollPage({ params }: Props) {
     ? `/polls/${categorySlug}`
     : `/polls`;
 
+  const profiles = poll.profiles as {
+    display_name?: string;
+    username?: string;
+  } | null;
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "QAPage",
@@ -133,11 +137,7 @@ export default async function PollPage({ params }: Props) {
       dateCreated: poll.created_at,
       author: {
         "@type": "Person",
-        name:
-          (poll.profiles as { display_name?: string; username?: string } | null)
-            ?.display_name ||
-          (poll.profiles as { username?: string } | null)?.username ||
-          "OpinionX user",
+        name: profiles?.display_name || profiles?.username || "OpinionX user",
       },
       suggestedAnswer: [
         {
@@ -163,7 +163,6 @@ export default async function PollPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* Crawlable summary — interactive vote UI is client-side */}
       <header className="mb-3">
         <p className="mb-1 text-xs text-zinc-500">
           <Link href="/polls" className="hover:text-purple-400">

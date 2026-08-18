@@ -69,19 +69,19 @@ export default async function CategoryPollsPage({ params }: Props) {
       .order("created_at", { ascending: false })
       .limit(40);
 
-    if (cat.filter === "trending") {
-      // Trending: recent polls ordered by engagement later in JS
+    const f = cat.filter;
+    if (f === "trending") {
       query = query.limit(60);
-    } else if ("category" in cat.filter) {
-      query = query.eq("category", cat.filter.category);
-    } else if ("mood" in cat.filter) {
-      query = query.eq("mood", cat.filter.mood);
+    } else if (typeof f === "object" && f !== null && "category" in f) {
+      query = query.eq("category", f.category);
+    } else if (typeof f === "object" && f !== null && "mood" in f) {
+      query = query.eq("mood", f.mood);
     }
 
     const { data } = await query;
     polls = data ?? [];
 
-    if (cat.filter === "trending") {
+    if (f === "trending") {
       polls = [...polls].sort(
         (a, b) =>
           b.vote_count_a +

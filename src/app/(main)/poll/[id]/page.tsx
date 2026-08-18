@@ -36,6 +36,16 @@ async function fetchPoll(id: string) {
   return data;
 }
 
+function categoryToSeoSlug(category: string): string | null {
+  for (const c of SEO_CATEGORIES) {
+    const f = c.filter;
+    if (typeof f === "object" && f !== null && "category" in f) {
+      if (f.category === category) return c.slug;
+    }
+  }
+  return null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const poll = await fetchPoll(id);
@@ -111,15 +121,8 @@ export default async function PollPage({ params }: Props) {
   }
 
   const total = (poll.vote_count_a ?? 0) + (poll.vote_count_b ?? 0);
-  const categorySlug =
-    SEO_CATEGORIES.find(
-      (c) =>
-        "category" in c.filter &&
-        c.filter.category === poll.category
-    )?.slug ?? null;
-  const categoryHref = categorySlug
-    ? `/polls/${categorySlug}`
-    : `/polls`;
+  const categorySlug = categoryToSeoSlug(poll.category);
+  const categoryHref = categorySlug ? `/polls/${categorySlug}` : `/polls`;
 
   const profiles = poll.profiles as {
     display_name?: string;

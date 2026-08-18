@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
-import { absoluteUrl } from "@/lib/seo";
+import { absoluteUrl, SITE_NAME } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Explore polls & people",
+  title: "Explore Polls & Opinions",
   description:
-    "Explore trending polls, new votes, mood categories, and people with similar opinions on OpinionX — the social voting platform for two-choice polls.",
-  alternates: {
-    canonical: absoluteUrl("/explore"),
-  },
+    "Discover trending, popular, and new OpinionX polls. Search questions, vote, and see what people think.",
+  alternates: { canonical: absoluteUrl("/explore") },
   openGraph: {
-    title: "Explore polls & people | OpinionX",
+    title: `Explore Polls & Opinions | ${SITE_NAME}`,
     description:
-      "Discover trending two-choice polls, vote on what people think, and find vibe matches on OpinionX.",
+      "Discover trending and popular polls on OpinionX. Vote and share public opinion.",
     url: absoluteUrl("/explore"),
+    type: "website",
   },
 };
 

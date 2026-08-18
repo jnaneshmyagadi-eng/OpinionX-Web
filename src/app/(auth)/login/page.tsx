@@ -7,6 +7,24 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
+function mapAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("email not confirmed") || m.includes("not confirmed")) {
+    return "Confirm your email first. Check your inbox (and spam) for the OpinionX link.";
+  }
+  if (m.includes("invalid login") || m.includes("invalid credentials")) {
+    return "Email or password is incorrect.";
+  }
+  if (m.includes("too many requests") || m.includes("rate")) {
+    return "Too many attempts. Wait a minute and try again.";
+  }
+  if (m.includes("user not found")) {
+    return "No account with that email. Sign up first.";
+  }
+  // Surface real message — never hide every failure as wrong password
+  return message || "Could not sign in. Please try again.";
+}
+
 function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -15,6 +33,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
+  const urlError = searchParams.get("error");
   const supabase = createClient();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -22,26 +41,40 @@ function LoginForm() {
     setError(null);
     setLoading(true);
     try {
+      const trimmedEmail = email.trim().toLowerCase();
       const { data, error: signInError } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: trimmedEmail,
           password,
         });
       if (signInError) {
-        setError("Email or password is incorrect.");
+        setError(mapAuthError(signInError.message));
         return;
       }
       if (!data.session) {
         setError("Could not start a session. Please try again.");
         return;
       }
+      // Confirm cookies are readable before navigating
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Session could not be saved. Allow cookies and try again.");
+        return;
+      }
       const safeRedirect =
         redirect.startsWith("/") && !redirect.startsWith("//")
           ? redirect
           : "/";
+      // Full page load so middleware sees auth cookies on the next request
       window.location.assign(safeRedirect);
-    } catch {
-      setError("Email or password is incorrect.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? mapAuthError(err.message)
+          : "Could not sign in. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -49,6 +82,11 @@ function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {(error || urlError) && (
+        <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {error || mapAuthError(urlError || "")}
+        </p>
+      )}
       <div>
         <label htmlFor="email" className="mb-1.5 block text-sm text-zinc-400">
           Email
@@ -105,12 +143,6 @@ function LoginForm() {
           Forgot password?
         </Link>
       </div>
-
-      {error && (
-        <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          {error}
-        </p>
-      )}
 
       <Button type="submit" className="w-full" disabled={loading}>
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log in"}

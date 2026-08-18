@@ -1,7 +1,6 @@
 /* OpinionX service worker — static assets only; never cache auth or private API data */
-const CACHE_VERSION = "opinionx-static-v1";
+const CACHE_VERSION = "opinionx-static-v2";
 const PRECACHE = [
-  "/",
   "/offline.html",
   "/manifest.json",
   "/icons/icon-192.png",
@@ -37,6 +36,9 @@ function isUnsafe(url) {
   if (u.hostname.includes("supabase.co")) return true;
   if (u.pathname.startsWith("/auth")) return true;
   if (u.pathname.startsWith("/api")) return true;
+  if (u.pathname.startsWith("/login")) return true;
+  if (u.pathname.startsWith("/signup")) return true;
+  if (u.pathname.startsWith("/create")) return true;
   if (u.searchParams.has("code")) return true;
   return false;
 }
@@ -48,7 +50,7 @@ function isStaticAsset(url) {
     u.pathname.startsWith("/_next/static/") ||
     u.pathname.startsWith("/icons/") ||
     u.pathname === "/manifest.json" ||
-    /\.(png|jpg|jpeg|gif|webp|svg|ico|woff2?|css|js)$/i.test(u.pathname)
+    /\.(png|jpg|jpeg|gif|webp|svg|ico|woff2?|css)$/i.test(u.pathname)
   );
 }
 
@@ -77,13 +79,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Navigation: network only (never serve cached HTML for auth routes)
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((res) => res)
-        .catch(() =>
-          caches.match("/offline.html").then((r) => r || caches.match("/"))
-        )
+      fetch(request).catch(() =>
+        caches.match("/offline.html").then((r) => r || Response.error())
+      )
     );
   }
 });

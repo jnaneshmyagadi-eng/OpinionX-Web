@@ -1,11 +1,15 @@
 import { createBrowserClient } from "@supabase/ssr";
 
 /**
- * Browser Supabase client.
- * During `next build` prerender, env may be unset — use placeholders so the
- * build completes. Runtime on Vercel always has NEXT_PUBLIC_* set.
+ * Singleton browser Supabase client.
+ * Reusing one instance avoids competing cookie writers across components.
+ * Runtime on Vercel must have NEXT_PUBLIC_* set; placeholders are build-only.
  */
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+
 export function createClient() {
+  if (browserClient) return browserClient;
+
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     "https://placeholder.supabase.co";
@@ -13,5 +17,13 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
 
-  return createBrowserClient(url, key);
+  browserClient = createBrowserClient(url, key, {
+    cookieOptions: {
+      path: "/",
+      sameSite: "lax",
+      // secure is set automatically by @supabase/ssr on https
+    },
+  });
+
+  return browserClient;
 }

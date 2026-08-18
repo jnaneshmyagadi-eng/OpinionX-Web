@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -44,14 +43,16 @@ const SECTIONS = [
 export default function SettingsPage() {
   const [confirmOut, setConfirmOut] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const router = useRouter();
   const supabase = createClient();
 
   async function logout() {
     setLoggingOut(true);
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      // Full navigation so middleware and cookies stay in sync
+      window.location.assign("/login");
+    }
   }
 
   return (
@@ -119,7 +120,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 disabled={loggingOut}
-                onClick={logout}
+                onClick={() => void logout()}
                 className="rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-400"
               >
                 {loggingOut ? "…" : "Confirm"}

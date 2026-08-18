@@ -38,35 +38,52 @@ function SignupForm() {
       const cleanUsername = username
         .toLowerCase()
         .replace(/[^a-z0-9_]/g, "");
+      const trimmedEmail = email.trim().toLowerCase();
 
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: trimmedEmail,
         password,
         options: {
           data: {
             username: cleanUsername,
-            display_name: username,
+            display_name: username.trim(),
           },
           emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeRedirect)}`,
         },
       });
       if (signUpError) throw signUpError;
 
+      // Session present = email confirmation disabled (or auto-confirm)
       if (data.session) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setError(
+            "Account created but session was not saved. Allow cookies, then log in."
+          );
+          return;
+        }
         window.location.assign(safeRedirect);
         return;
       }
 
+      // User created but no session = email confirmation required
       if (data.user) {
         setInfo(
-          "Account created. Check your email to confirm, then sign in to lock your vote."
+          "Account created. Confirm your email (check spam), then log in with the same password."
         );
         return;
       }
 
       setError("Signup failed. Please try again.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      const msg = err instanceof Error ? err.message : "Signup failed";
+      if (msg.toLowerCase().includes("already registered")) {
+        setError("This email is already registered. Log in instead.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

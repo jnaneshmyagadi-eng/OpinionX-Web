@@ -33,14 +33,14 @@ function applyRobotsHeader(
   } else {
     response.headers.set("X-Robots-Tag", "index, follow");
   }
+  // Never let CDNs cache auth-refreshed responses
+  response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
 /**
- * When creating a NEW response (e.g. redirect), Supabase auth cookies from
- * supabaseResponse MUST be copied over. Dropping them causes the browser and
- * server to go out of sync and the session appears lost on the next request.
- * @see https://supabase.com/docs/guides/auth/server-side/creating-a-client
+ * Copy every Set-Cookie from the Supabase response onto a new response
+ * (e.g. redirect). Dropping these is the #1 cause of "logged in then logged out".
  */
 function copyAuthCookies(
   from: NextResponse,
@@ -49,6 +49,9 @@ function copyAuthCookies(
   from.cookies.getAll().forEach((cookie) => {
     to.cookies.set(cookie.name, cookie.value);
   });
+  // Preserve cache headers from setAll when present
+  const cacheControl = from.headers.get("Cache-Control");
+  if (cacheControl) to.headers.set("Cache-Control", cacheControl);
   return to;
 }
 
@@ -57,12 +60,16 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    "https://placeholder.supabase.co";
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder";
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // Fail closed if production env is missing — do not use placeholders at runtime
+  if (!url || !key) {
+    console.error(
+      "[OpinionX] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    );
+    return applyRobotsHeader(supabaseResponse, request.nextUrl.pathname);
+  }
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -89,7 +96,6 @@ export async function middleware(request: NextRequest) {
   });
 
   // Do not run code between createServerClient and getUser().
-  // getUser() validates the JWT and triggers token refresh via setAll.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -125,12 +131,15 @@ export async function middleware(request: NextRequest) {
     return applyRobotsHeader(redirectResponse, "/");
   }
 
-  // IMPORTANT: return supabaseResponse so refreshed auth cookies reach the browser
   return applyRobotsHeader(supabaseResponse, path);
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    /*
+     * Match all request paths except static assets and the service worker.
+     * SW must not go through middleware or cookie logic can interfere.
+     */
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

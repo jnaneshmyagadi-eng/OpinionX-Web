@@ -9,6 +9,7 @@ export function TopBar() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [initial, setInitial] = useState("U");
   const [unread, setUnread] = useState(0);
+  const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -16,7 +17,11 @@ export function TopBar() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setAuthed(false);
+        return;
+      }
+      setAuthed(true);
       const { data: profile } = await supabase
         .from("profiles")
         .select("username, avatar_url")
@@ -45,35 +50,50 @@ export function TopBar() {
           </span>
         </Link>
         <div className="flex items-center gap-1">
-          <Link
-            href="/ai"
-            className="rounded-full p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-purple-300"
-            aria-label="OpinionX AI"
-          >
-            <Sparkles className="h-5 w-5" />
-          </Link>
-          <Link
-            href="/notifications"
-            className="relative rounded-full p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {unread > 0 && (
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-500" />
-            )}
-          </Link>
-          <Link
-            href="/profile"
-            className="ml-1 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-sm font-semibold text-white"
-            aria-label="Profile"
-          >
-            {avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatar} alt="" className="h-full w-full object-cover" />
-            ) : (
-              initial
-            )}
-          </Link>
+          {authed === false ? (
+            <Link
+              href="/login"
+              className="rounded-full bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              Log in
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/ai"
+                className="rounded-full p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-purple-300"
+                aria-label="OpinionX AI"
+              >
+                <Sparkles className="h-5 w-5" />
+              </Link>
+              <Link
+                href="/notifications"
+                className="relative rounded-full p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-white"
+                aria-label="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {unread > 0 && (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-500" />
+                )}
+              </Link>
+              <Link
+                href="/profile"
+                className="ml-1 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-sm font-semibold text-white"
+                aria-label="Profile"
+              >
+                {avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatar}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  initial
+                )}
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

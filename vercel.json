@@ -1,50 +1,39 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/daily-growth",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "index, follow"
-        }
-      ]
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
     },
     {
       "source": "/explore",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "index, follow"
-        }
-      ]
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
     },
     {
       "source": "/poll/(.*)",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "index, follow"
-        }
-      ]
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
+    },
+    {
+      "source": "/today",
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
     },
     {
       "source": "/robots.txt",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "index, follow"
-        }
-      ]
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
     },
     {
       "source": "/sitemap.xml",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "index, follow"
-        }
-      ]
+      "headers": [{ "key": "X-Robots-Tag", "value": "index, follow" }]
+    },
+    {
+      "source": "/automation",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     }
   ]
 }

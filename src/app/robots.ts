@@ -35,6 +35,7 @@ export default function robots(): MetadataRoute.Robots {
         "/auth/",
         "/api/",
         "/offline",
+        "/automation",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

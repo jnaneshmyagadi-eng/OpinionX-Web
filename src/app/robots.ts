@@ -6,7 +6,20 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/explore", "/poll/", "/polls", "/polls/"],
+        allow: [
+          "/",
+          "/explore",
+          "/poll/",
+          "/polls",
+          "/polls/",
+          "/world",
+          "/india",
+          "/money",
+          "/ai",
+          "/people",
+          "/trending",
+          "/about",
+        ],
         disallow: [
           "/login",
           "/signup",
@@ -16,7 +29,7 @@ export default function robots(): MetadataRoute.Robots {
           "/chat",
           "/notifications",
           "/create",
-          "/ai",
+          "/ai-assistant",
           "/profile",
           "/profile/edit",
           "/auth/",

@@ -60,9 +60,9 @@ export function TopBar() {
           ) : (
             <>
               <Link
-                href="/ai"
+                href="/ai-assistant"
                 className="rounded-full p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-purple-300"
-                aria-label="OpinionX AI"
+                aria-label="OpinionX AI Assistant"
               >
                 <Sparkles className="h-5 w-5" />
               </Link>

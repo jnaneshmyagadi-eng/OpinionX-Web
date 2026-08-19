@@ -4,6 +4,17 @@ import { SITE_URL, SEO_CATEGORIES } from "@/lib/seo";
 
 export const revalidate = 3600;
 
+const DISCOVERY = [
+  "/world",
+  "/india",
+  "/money",
+  "/ai",
+  "/people",
+  "/trending",
+  "/about",
+  "/about/data-sources",
+] as const;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
 
@@ -26,6 +37,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.85,
     },
+    ...DISCOVERY.map((path) => ({
+      url: `${SITE_URL}${path}`,
+      lastModified: now,
+      changeFrequency: "hourly" as const,
+      priority: path === "/trending" || path === "/people" ? 0.9 : 0.85,
+    })),
     ...SEO_CATEGORIES.map((c) => ({
       url: `${SITE_URL}/polls/${c.slug}`,
       lastModified: now,
@@ -58,7 +75,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch {
-    // Static routes still returned if DB unavailable
+    // static only
   }
 
   return [...staticRoutes, ...pollRoutes];

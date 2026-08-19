@@ -19,7 +19,7 @@ function isPrivatePath(path: string): boolean {
     path.startsWith("/notifications") ||
     path.startsWith("/profile") ||
     path.startsWith("/settings") ||
-    path.startsWith("/ai") ||
+    path.startsWith("/ai-assistant") ||
     path.startsWith("/api/")
   );
 }
@@ -33,15 +33,10 @@ function applyRobotsHeader(
   } else {
     response.headers.set("X-Robots-Tag", "index, follow");
   }
-  // Never let CDNs cache auth-refreshed responses
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
-/**
- * Copy every Set-Cookie from the Supabase response onto a new response
- * (e.g. redirect). Dropping these is the #1 cause of "logged in then logged out".
- */
 function copyAuthCookies(
   from: NextResponse,
   to: NextResponse
@@ -49,7 +44,6 @@ function copyAuthCookies(
   from.cookies.getAll().forEach((cookie) => {
     to.cookies.set(cookie.name, cookie.value);
   });
-  // Preserve cache headers from setAll when present
   const cacheControl = from.headers.get("Cache-Control");
   if (cacheControl) to.headers.set("Cache-Control", cacheControl);
   return to;
@@ -63,7 +57,6 @@ export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Fail closed if production env is missing — do not use placeholders at runtime
   if (!url || !key) {
     console.error(
       "[OpinionX] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY"
@@ -95,7 +88,6 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Do not run code between createServerClient and getUser().
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -112,7 +104,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/notifications") ||
     path.startsWith("/profile") ||
     path.startsWith("/settings") ||
-    path.startsWith("/ai");
+    path.startsWith("/ai-assistant");
 
   if (!user && isProtected) {
     const redirectUrl = request.nextUrl.clone();
@@ -136,10 +128,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except static assets and the service worker.
-     * SW must not go through middleware or cookie logic can interfere.
-     */
     "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

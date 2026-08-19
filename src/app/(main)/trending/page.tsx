@@ -6,19 +6,30 @@ import { fetchTrends } from "@/lib/trends";
 import { fetchTrendingPolls } from "@/lib/polls-public";
 import { absoluteUrl } from "@/lib/seo";
 import { formatRelativeShort } from "@/lib/trends";
+import { breadcrumbJsonLd, webPageJsonLd } from "@/lib/jsonld";
 
 export const revalidate = 600;
 
+const TITLE = "Trending Opinions and Topics Right Now";
+const DESC =
+  "Trending world and India headlines plus the hottest OpinionX polls. Discover what people are debating and voting on today.";
+
 export const metadata: Metadata = {
-  title: "Trending — What the Internet Is Talking About",
-  description:
-    "Trending headlines and the hottest OpinionX polls right now. Discover world, India, money, AI and public opinion in one place.",
+  title: { absolute: `${TITLE} | OpinionX` },
+  description: DESC,
   alternates: { canonical: absoluteUrl("/trending") },
   openGraph: {
-    title: "Trending on OpinionX",
-    description: "What the internet is talking about — and what people are voting.",
+    title: TITLE,
+    description: DESC,
     url: absoluteUrl("/trending"),
+    type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESC,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default async function TrendingPage() {
@@ -37,16 +48,34 @@ export default async function TrendingPage() {
     ...ai.items,
   ].slice(0, 12);
 
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Trending", path: "/trending" },
+  ]);
+  const pageLd = webPageJsonLd({
+    path: "/trending",
+    name: TITLE,
+    description: DESC,
+    dateModified: fetchedAt,
+  });
+
   return (
     <div className="px-3 py-4">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(crumbs) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(pageLd) }}
+      />
       <header className="mb-5">
         <p className="text-xs uppercase tracking-wider text-zinc-500">🔥 Trending</p>
-        <h1 className="mt-1 text-2xl font-bold text-white">
-          What the internet is talking about
-        </h1>
+        <h1 className="mt-1 text-2xl font-bold text-white">{TITLE}</h1>
         <p className="mt-2 text-sm text-zinc-400">
           Headlines from public RSS sources + live OpinionX votes. Updated{" "}
-          {formatRelativeShort(fetchedAt) || "just now"}.
+          {formatRelativeShort(fetchedAt) || "just now"}. Poll results are user
+          opinions, not facts.
         </p>
         <nav className="mt-3 flex flex-wrap gap-2 text-xs">
           <Link href="/world" className="text-purple-400 hover:underline">
@@ -69,7 +98,7 @@ export default async function TrendingPage() {
 
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-          Headlines
+          What happened (external sources)
         </h2>
         {headlines.length === 0 ? (
           <p className="text-sm text-zinc-500">
@@ -86,7 +115,7 @@ export default async function TrendingPage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-          👥 Hottest votes
+          What people think (OpinionX votes)
         </h2>
         <div className="space-y-3">
           {polls.map((p) => (

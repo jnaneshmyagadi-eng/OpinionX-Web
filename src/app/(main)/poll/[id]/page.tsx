@@ -10,6 +10,7 @@ import {
   truncateMeta,
   SEO_CATEGORIES,
 } from "@/lib/seo";
+import { breadcrumbJsonLd } from "@/lib/jsonld";
 
 export const revalidate = 300;
 
@@ -64,8 +65,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   );
   const description = truncateMeta(
     total > 0
-      ? `Vote on OpinionX: ${poll.option_a} vs ${poll.option_b}. ${total.toLocaleString()} votes so far. See what people think.`
-      : `Vote on OpinionX: ${poll.option_a} vs ${poll.option_b}. Join the conversation and share your opinion.`
+      ? `Vote on OpinionX: ${poll.option_a} vs ${poll.option_b}. ${total.toLocaleString()} real user votes. Results reflect opinions, not facts.`
+      : `Vote on OpinionX: ${poll.option_a} vs ${poll.option_b}. Public opinion poll — user votes only.`
   );
   const url = absoluteUrl(`/poll/${id}`);
 
@@ -129,6 +130,15 @@ export default async function PollPage({ params }: Props) {
     username?: string;
   } | null;
 
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Polls", path: "/polls" },
+    ...(categorySlug
+      ? [{ name: poll.category, path: categoryHref }]
+      : []),
+    { name: truncateMeta(poll.question, 40), path: `/poll/${id}` },
+  ]);
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "QAPage",
@@ -157,10 +167,16 @@ export default async function PollPage({ params }: Props) {
     },
     url: absoluteUrl(`/poll/${id}`),
     isPartOf: { "@type": "WebSite", name: SITE_NAME, url: SITE_URL },
+    description:
+      "OpinionX public poll. Percentages reflect authenticated user votes, not objective facts.",
   };
 
   return (
     <div className="px-3 py-4">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(crumbs) }}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -168,6 +184,10 @@ export default async function PollPage({ params }: Props) {
 
       <header className="mb-3">
         <p className="mb-1 text-xs text-zinc-500">
+          <Link href="/" className="hover:text-purple-400">
+            Home
+          </Link>
+          {" · "}
           <Link href="/polls" className="hover:text-purple-400">
             Polls
           </Link>
@@ -191,6 +211,10 @@ export default async function PollPage({ params }: Props) {
             </>
           )}
         </p>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          Updated {new Date(poll.updated_at || poll.created_at).toISOString().slice(0, 10)}
+          {" · "}Results are user opinions on OpinionX, not facts.
+        </p>
       </header>
 
       <PollDetailClient pollId={id} />
@@ -201,7 +225,7 @@ export default async function PollPage({ params }: Props) {
             id="related-heading"
             className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500"
           >
-            Related polls
+            Related debates
           </h2>
           <ul className="space-y-2">
             {related.map((r) => {
@@ -239,16 +263,16 @@ export default async function PollPage({ params }: Props) {
             Create your own poll
           </Link>
           <Link
-            href="/explore"
+            href="/trending"
             className="rounded-full border border-zinc-600 px-4 py-2 text-sm text-zinc-200"
           >
-            Explore more
+            Trending
           </Link>
           <Link
-            href="/polls"
+            href="/people"
             className="rounded-full border border-zinc-600 px-4 py-2 text-sm text-zinc-200"
           >
-            All categories
+            People
           </Link>
         </div>
       </section>

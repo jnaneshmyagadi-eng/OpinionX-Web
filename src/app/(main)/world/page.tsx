@@ -3,20 +3,30 @@ import { HubShell } from "@/components/discovery/hub-shell";
 import { fetchTrends } from "@/lib/trends";
 import { fetchLivePolls } from "@/lib/polls-public";
 import { absoluteUrl } from "@/lib/seo";
+import { breadcrumbJsonLd, webPageJsonLd } from "@/lib/jsonld";
 
 export const revalidate = 900;
 
+const TITLE = "World Trending Topics and Public Opinion";
+const DESC =
+  "What the world is talking about right now — public headlines plus OpinionX votes. News is what happened; polls are what people think.";
+
 export const metadata: Metadata = {
-  title: "World — What’s Exploding Right Now",
-  description:
-    "World headlines from public sources, plus what people are voting on OpinionX. News tells you what happened — OpinionX tells you what people think.",
+  title: { absolute: `${TITLE} | OpinionX` },
+  description: DESC,
   alternates: { canonical: absoluteUrl("/world") },
   openGraph: {
-    title: "World — What’s Exploding Right Now | OpinionX",
-    description:
-      "Global conversations and public opinion. See headlines and vote on OpinionX.",
+    title: TITLE,
+    description: DESC,
     url: absoluteUrl("/world"),
+    type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESC,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default async function WorldPage() {
@@ -24,15 +34,36 @@ export default async function WorldPage() {
     fetchTrends("world", 10),
     fetchLivePolls(8),
   ]);
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "World", path: "/world" },
+  ]);
+  const pageLd = webPageJsonLd({
+    path: "/world",
+    name: TITLE,
+    description: DESC,
+    dateModified: fetchedAt,
+  });
+
   return (
-    <HubShell
-      badge="🌍 World"
-      title="What’s exploding right now"
-      subtitle="Global headlines from public sources, paired with real OpinionX votes."
-      items={items}
-      polls={polls}
-      fetchedAt={fetchedAt}
-      feedError={error}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(crumbs) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(pageLd) }}
+      />
+      <HubShell
+        badge="🌍 World"
+        title={TITLE}
+        subtitle="Global headlines from public RSS sources, paired with real OpinionX votes."
+        items={items}
+        polls={polls}
+        fetchedAt={fetchedAt}
+        feedError={error}
+      />
+    </>
   );
 }

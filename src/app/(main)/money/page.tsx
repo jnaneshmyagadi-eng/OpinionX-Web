@@ -3,19 +3,30 @@ import { HubShell } from "@/components/discovery/hub-shell";
 import { fetchTrends } from "@/lib/trends";
 import { fetchLivePolls } from "@/lib/polls-public";
 import { absoluteUrl } from "@/lib/seo";
+import { breadcrumbJsonLd, webPageJsonLd } from "@/lib/jsonld";
 
 export const revalidate = 900;
 
+const TITLE = "Money Trends and Career Polls";
+const DESC =
+  "Business headlines and OpinionX polls on jobs, salary and money trade-offs. See what people are deciding about careers and work-life balance.";
+
 export const metadata: Metadata = {
-  title: "Money — What’s Moving",
-  description:
-    "Business and money headlines plus career and salary opinion polls on OpinionX.",
+  title: { absolute: `${TITLE} | OpinionX` },
+  description: DESC,
   alternates: { canonical: absoluteUrl("/money") },
   openGraph: {
-    title: "Money — What’s Moving | OpinionX",
-    description: "Markets, careers, and what people choose when money is on the line.",
+    title: TITLE,
+    description: DESC,
     url: absoluteUrl("/money"),
+    type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESC,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default async function MoneyPage() {
@@ -23,15 +34,36 @@ export default async function MoneyPage() {
     fetchTrends("money", 10),
     fetchLivePolls(8),
   ]);
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "Money", path: "/money" },
+  ]);
+  const pageLd = webPageJsonLd({
+    path: "/money",
+    name: TITLE,
+    description: DESC,
+    dateModified: fetchedAt,
+  });
+
   return (
-    <HubShell
-      badge="💰 Money"
-      title="What’s moving"
-      subtitle="Business headlines from public sources, plus OpinionX debates on jobs, salary and trade-offs."
-      items={items}
-      polls={polls}
-      fetchedAt={fetchedAt}
-      feedError={error}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(crumbs) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(pageLd) }}
+      />
+      <HubShell
+        badge="💰 Money"
+        title={TITLE}
+        subtitle="Business headlines from public sources plus OpinionX debates on jobs and money. Polls reflect votes, not financial advice."
+        items={items}
+        polls={polls}
+        fetchedAt={fetchedAt}
+        feedError={error}
+      />
+    </>
   );
 }

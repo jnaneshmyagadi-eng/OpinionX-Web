@@ -3,20 +3,30 @@ import { HubShell } from "@/components/discovery/hub-shell";
 import { fetchTrends } from "@/lib/trends";
 import { fetchLivePolls } from "@/lib/polls-public";
 import { absoluteUrl } from "@/lib/seo";
+import { breadcrumbJsonLd, webPageJsonLd } from "@/lib/jsonld";
 
 export const revalidate = 900;
 
+const TITLE = "What Is India Talking About Today?";
+const DESC =
+  "India trending topics, public debates and OpinionX polls. See headlines from public sources and what people are voting — user opinions, not facts.";
+
 export const metadata: Metadata = {
-  title: "India — What Indians Are Talking About",
-  description:
-    "India-focused headlines and public opinion polls. See what Indians are debating and vote on OpinionX.",
+  title: { absolute: `${TITLE} | OpinionX` },
+  description: DESC,
   alternates: { canonical: absoluteUrl("/india") },
   openGraph: {
-    title: "India Is Debating This Right Now 👀 | OpinionX",
-    description:
-      "India headlines and live public opinion. Vote and share the split.",
+    title: "India Is Debating This Right Now 👀",
+    description: DESC,
     url: absoluteUrl("/india"),
+    type: "website",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "India Is Debating This Right Now 👀",
+    description: DESC,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default async function IndiaPage() {
@@ -24,15 +34,36 @@ export default async function IndiaPage() {
     fetchTrends("india", 10),
     fetchLivePolls(8),
   ]);
+  const crumbs = breadcrumbJsonLd([
+    { name: "Home", path: "/" },
+    { name: "India", path: "/india" },
+  ]);
+  const pageLd = webPageJsonLd({
+    path: "/india",
+    name: TITLE,
+    description: DESC,
+    dateModified: fetchedAt,
+  });
+
   return (
-    <HubShell
-      badge="🇮🇳 India"
-      title="What Indians are talking about"
-      subtitle="India news from public sources + real votes on careers, cities, culture and everyday arguments."
-      items={items}
-      polls={polls}
-      fetchedAt={fetchedAt}
-      feedError={error}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(crumbs) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(pageLd) }}
+      />
+      <HubShell
+        badge="🇮🇳 India"
+        title={TITLE}
+        subtitle="India headlines from public sources + real OpinionX votes on careers, cities and everyday arguments. Poll results are user votes, not objective facts."
+        items={items}
+        polls={polls}
+        fetchedAt={fetchedAt}
+        feedError={error}
+      />
+    </>
   );
 }

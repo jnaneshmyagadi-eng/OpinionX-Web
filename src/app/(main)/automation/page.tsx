@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { getCapabilityReport } from "@/lib/automation/capabilities";
 import { buildDailyBrief } from "@/lib/daily-engine";
+import { isBufferConfigured } from "@/lib/automation/buffer-client";
 import { DistributionList } from "@/components/discovery/distribution-list";
 import { absoluteUrl } from "@/lib/seo";
 
@@ -15,6 +16,16 @@ export const metadata: Metadata = {
   alternates: { canonical: absoluteUrl("/automation") },
 };
 
+type BufferResultRow = {
+  service?: string;
+  channelName?: string;
+  success?: boolean;
+  mode?: string;
+  updateId?: string;
+  error?: string;
+  api?: string;
+};
+
 type RunRow = {
   id: string;
   created_at: string;
@@ -25,6 +36,7 @@ type RunRow = {
   poll_created: boolean;
   poll_skipped_reason: string | null;
   platforms: Record<string, string> | null;
+  buffer_results: BufferResultRow[] | null;
   headline_count: number | null;
   notes: string | null;
   error: string | null;
@@ -40,7 +52,7 @@ async function fetchLatestRuns(): Promise<RunRow[]> {
   const { data } = await supabase
     .from("automation_runs")
     .select(
-      "id, created_at, status, topic, poll_id, poll_url, poll_created, poll_skipped_reason, platforms, headline_count, notes, error"
+      "id, created_at, status, topic, poll_id, poll_url, poll_created, poll_skipped_reason, platforms, buffer_results, headline_count, notes, error"
     )
     .order("created_at", { ascending: false })
     .limit(10);
@@ -68,8 +80,8 @@ export default async function AutomationDashboardPage() {
     buildDailyBrief(),
   ]);
   const last = runs[0] ?? null;
+  const bufferOn = isBufferConfigured();
 
-  // Next daily cron: 03:30 UTC = 09:00 IST
   const now = new Date();
   const next = new Date(
     Date.UTC(
@@ -83,6 +95,10 @@ export default async function AutomationDashboardPage() {
   );
   if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
 
+  const bufferResults = Array.isArray(last?.buffer_results)
+    ? last!.buffer_results
+    : [];
+
   return (
     <div className="px-3 py-4">
       <header className="mb-5">
@@ -93,12 +109,12 @@ export default async function AutomationDashboardPage() {
           Daily growth automation
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Honest status only. Nothing is marked AUTO unless a real write API or
-          secured server path is available.
+          Honest status only. Buffer publishes only when{" "}
+          <code className="text-zinc-300">BUFFER_ACCESS_TOKEN</code> is set and
+          channels are connected in Buffer.
         </p>
         <p className="mt-1 text-[11px] text-zinc-600">
-          Vercel Hobby: cron runs once daily (03:30 UTC / 09:00 IST), not every
-          6 hours.
+          Cron: daily 03:30 UTC (09:00 IST) · Hobby plan limit
         </p>
       </header>
 
@@ -107,10 +123,11 @@ export default async function AutomationDashboardPage() {
         <ul className="mt-3 space-y-2 text-sm">
           {(
             [
-              ["X (organic)", caps.x_organic, caps.reasons.x_organic],
-              ["Instagram", caps.instagram, caps.reasons.instagram],
-              ["Facebook", caps.facebook, caps.reasons.facebook],
-              ["LinkedIn", caps.linkedin, caps.reasons.linkedin],
+              ["Buffer", caps.buffer, caps.reasons.buffer],
+              ["X via Buffer", caps.x_organic, caps.reasons.x_organic],
+              ["Instagram via Buffer", caps.instagram, caps.reasons.instagram],
+              ["Facebook via Buffer", caps.facebook, caps.reasons.facebook],
+              ["LinkedIn via Buffer", caps.linkedin, caps.reasons.linkedin],
               ["Reddit", caps.reddit, caps.reasons.reddit],
               ["WhatsApp", caps.whatsapp, caps.reasons.whatsapp],
               [
@@ -129,6 +146,55 @@ export default async function AutomationDashboardPage() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <h2 className="text-sm font-semibold text-white">Publish status</h2>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          BUFFER_ACCESS_TOKEN: {bufferOn ? "set (server)" : "NOT SET"}
+        </p>
+        {bufferResults.length === 0 ? (
+          <p className="mt-3 text-sm text-zinc-500">
+            No Buffer results on the latest run. Either cron has not run, token is
+            missing, or no poll was available.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {bufferResults.map((r, i) => (
+              <li
+                key={`${r.service}-${i}`}
+                className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold uppercase text-zinc-200">
+                    {r.service || "buffer"}
+                    {r.channelName ? ` · ${r.channelName}` : ""}
+                  </span>
+                  <span
+                    className={
+                      r.success && r.mode === "queue"
+                        ? "text-emerald-400"
+                        : r.mode === "skipped"
+                          ? "text-amber-300"
+                          : "text-red-400"
+                    }
+                  >
+                    {r.mode?.toUpperCase() || (r.success ? "OK" : "FAIL")}
+                  </span>
+                </div>
+                {r.updateId && (
+                  <p className="mt-1 text-zinc-500">Update ID: {r.updateId}</p>
+                )}
+                {r.api && (
+                  <p className="text-zinc-600">API: {r.api}</p>
+                )}
+                {r.error && (
+                  <p className="mt-1 text-red-400/90">{r.error}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
@@ -187,9 +253,9 @@ export default async function AutomationDashboardPage() {
           </dl>
         ) : (
           <p className="mt-2 text-sm text-zinc-500">
-            No runs logged yet. Cron has not fired, or{" "}
-            <code className="text-zinc-400">SUPABASE_SERVICE_ROLE_KEY</code> is
-            not set so logs cannot be written.
+            No runs logged yet. Needs daily cron +{" "}
+            <code className="text-zinc-400">SUPABASE_SERVICE_ROLE_KEY</code> to
+            write logs.
           </p>
         )}
         <p className="mt-3 text-[11px] text-zinc-600">
@@ -217,10 +283,6 @@ export default async function AutomationDashboardPage() {
               0
             )}
           </li>
-          <li>
-            Clicks / visitors / signups: require Vercel Analytics + Supabase —
-            not invented here.
-          </li>
         </ul>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <Link href="/today" className="text-purple-400 hover:underline">
@@ -234,39 +296,36 @@ export default async function AutomationDashboardPage() {
 
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-white">
-          Manual publish pack (always available)
+          Manual publish pack (fallback if Buffer fails)
         </h2>
         <DistributionList items={brief.distribution} />
       </section>
 
       <section className="rounded-2xl border border-dashed border-zinc-700 p-4 text-xs text-zinc-500">
-        <h2 className="font-semibold text-zinc-300">
-          Enable full auto poll create
-        </h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-4">
+        <h2 className="font-semibold text-zinc-300">Vercel env checklist</h2>
+        <ul className="mt-2 list-disc space-y-1 pl-4">
           <li>
-            Vercel → Project → Settings → Environment Variables:
-            <ul className="mt-1 list-disc pl-4">
-              <li>
-                <code>CRON_SECRET</code> — random long string
-              </li>
-              <li>
-                <code>SUPABASE_SERVICE_ROLE_KEY</code> — server only, never
-                NEXT_PUBLIC
-              </li>
-              <li>
-                <code>AUTOMATION_USER_ID</code> — your real profile UUID
-              </li>
-            </ul>
+            <code>BUFFER_ACCESS_TOKEN</code> — Buffer API key or legacy access
+            token (server only)
           </li>
-          <li>Redeploy.</li>
           <li>
-            Cron: <code>/api/cron/daily-growth</code> daily 03:30 UTC.
+            <code>BUFFER_ORGANIZATION_ID</code> — optional; needed for GraphQL
+            channel list if auto-discovery fails
           </li>
-        </ol>
+          <li>
+            <code>SUPABASE_SERVICE_ROLE_KEY</code> — log runs + optional poll
+            create
+          </li>
+          <li>
+            <code>AUTOMATION_USER_ID</code> — profile UUID for auto polls
+          </li>
+          <li>
+            <code>CRON_SECRET</code> — protect manual cron triggers
+          </li>
+        </ul>
         <p className="mt-2">
-          Social channels stay MANUAL until official organic write OAuth is
-          connected. X Ads alone is not used (would spend money).
+          Connect X / Instagram / Facebook / LinkedIn inside your Buffer account.
+          Reddit & WhatsApp stay manual.
         </p>
       </section>
     </div>

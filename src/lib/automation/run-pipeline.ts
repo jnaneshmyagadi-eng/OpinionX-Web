@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildDailyBrief, type SuggestedDebate } from "@/lib/daily-engine";
 import { getCapabilityReport } from "@/lib/automation/capabilities";
+import {
+  isBufferConfigured,
+  publishPollToBuffer,
+  type BufferPublishResult,
+} from "@/lib/automation/buffer-client";
 import { SITE_URL } from "@/lib/seo";
 
 export type PipelineResult = {
@@ -13,6 +18,7 @@ export type PipelineResult = {
   pollSkippedReason: string | null;
   platforms: Record<string, "AUTO" | "MANUAL" | "UNAVAILABLE" | "SKIPPED">;
   distribution: { platform: string; title: string; body: string; url: string }[];
+  bufferResults: BufferPublishResult[];
   headlineCount: number;
   notes: string[];
   error: string | null;
@@ -31,9 +37,7 @@ function normalizeQuestion(q: string) {
   return q.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-async function alreadyExists(
-  question: string
-): Promise<boolean> {
+async function alreadyExists(question: string): Promise<boolean> {
   const supabase = adminClient();
   if (!supabase) return false;
   const { data } = await supabase
@@ -58,7 +62,6 @@ async function createPollAsAutomation(
     return { error: "Duplicate question — skipped" };
   }
 
-  // Validate lengths
   if (suggestion.question.length < 8 || suggestion.question.length > 300) {
     return { error: "Invalid question length" };
   }
@@ -73,7 +76,12 @@ async function createPollAsAutomation(
       question: suggestion.question.trim(),
       option_a: suggestion.optionA.trim().slice(0, 100),
       option_b: suggestion.optionB.trim().slice(0, 100),
-      category: suggestion.hub === "ai" ? "tech" : suggestion.hub === "money" ? "career" : "general",
+      category:
+        suggestion.hub === "ai"
+          ? "tech"
+          : suggestion.hub === "money"
+            ? "career"
+            : "general",
       mood: "curious",
       is_active: true,
       vote_count_a: 0,
@@ -88,24 +96,75 @@ async function createPollAsAutomation(
   return { id: data.id as string };
 }
 
+async function loadPublishedKeys(pollId: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const supabase = adminClient();
+  if (!supabase) return keys;
+  const { data } = await supabase
+    .from("automation_runs")
+    .select("buffer_results, poll_id")
+    .eq("poll_id", pollId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  for (const row of data ?? []) {
+    const results = row.buffer_results as BufferPublishResult[] | null;
+    if (!Array.isArray(results)) continue;
+    for (const r of results) {
+      if (r.success && r.mode === "queue" && r.service) {
+        keys.add(`${r.service}:${pollId}`);
+      }
+    }
+  }
+  return keys;
+}
+
+async function fetchPollOptions(pollId: string): Promise<{
+  question: string;
+  option_a: string;
+  option_b: string;
+} | null> {
+  const supabase = adminClient();
+  if (!supabase) {
+    // public anon fallback
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return null;
+    const client = createClient(url, key);
+    const { data } = await client
+      .from("polls")
+      .select("question, option_a, option_b")
+      .eq("id", pollId)
+      .maybeSingle();
+    return data;
+  }
+  const { data } = await supabase
+    .from("polls")
+    .select("question, option_a, option_b")
+    .eq("id", pollId)
+    .maybeSingle();
+  return data;
+}
+
 export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
   const ranAt = new Date().toISOString();
   const caps = getCapabilityReport();
   const notes: string[] = [];
   const platforms: PipelineResult["platforms"] = {
-    x: caps.x_organic === "AUTO" ? "AUTO" : "MANUAL",
+    x: caps.x_organic,
     instagram: caps.instagram,
     facebook: caps.facebook,
     linkedin: caps.linkedin,
     reddit: caps.reddit,
     whatsapp: caps.whatsapp,
+    buffer: caps.buffer,
   };
 
-  // Never auto-spend on X Ads
   if (caps.x_ads_only) {
-    platforms.x = "MANUAL";
-    notes.push("X organic unavailable; X Ads not used (would spend money).");
+    notes.push("X Ads path disabled (no paid spend).");
   }
+
+  let bufferResults: BufferPublishResult[] = [];
 
   try {
     const brief = await buildDailyBrief();
@@ -115,7 +174,6 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       brief.headlines.money.length +
       brief.headlines.ai.length;
 
-    // Prefer strongest existing live poll; else first safe suggestion
     const topExisting = brief.topPolls[0] ?? null;
     const suggestion = brief.suggestions[0] ?? null;
 
@@ -127,8 +185,9 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
     let pollSkippedReason: string | null = null;
     let topic =
       topExisting?.question ?? suggestion?.question ?? "Daily brief ready";
+    let optionA = topExisting?.option_a ?? suggestion?.optionA ?? "Option A";
+    let optionB = topExisting?.option_b ?? suggestion?.optionB ?? "Option B";
 
-    // Auto-create only when configured AND no strong existing poll with votes
     const existingVotes = topExisting
       ? topExisting.vote_count_a + topExisting.vote_count_b
       : 0;
@@ -145,6 +204,8 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
           pollUrl = `${SITE_URL}/poll/${created.id}`;
           pollCreated = true;
           topic = suggestion.question;
+          optionA = suggestion.optionA;
+          optionB = suggestion.optionB;
           notes.push(`Auto-created poll ${created.id}`);
         } else {
           pollSkippedReason = created.error;
@@ -160,7 +221,16 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       notes.push("Poll auto-create disabled — env incomplete");
     }
 
-    // Always attach /today distribution pack (share-ready)
+    // Refresh options from DB if we only have id
+    if (pollId) {
+      const row = await fetchPollOptions(pollId);
+      if (row) {
+        topic = row.question;
+        optionA = row.option_a;
+        optionB = row.option_b;
+      }
+    }
+
     const distribution = brief.distribution.map((d) => ({
       platform: d.platform,
       title: d.title,
@@ -168,12 +238,63 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       url: d.url,
     }));
 
-    // Social publish: none connected for organic AUTO
-    notes.push(
-      "Social publish: all MANUAL/UNAVAILABLE — copy pack stored for founder."
-    );
+    // Buffer publish (non-fatal)
+    if (pollId && pollUrl && isBufferConfigured()) {
+      try {
+        const already = await loadPublishedKeys(pollId);
+        bufferResults = await publishPollToBuffer({
+          pollId,
+          question: topic,
+          optionA,
+          optionB,
+          pollUrl,
+          alreadyPublishedKeys: already,
+        });
+        const okCount = bufferResults.filter(
+          (r) => r.success && r.mode === "queue"
+        ).length;
+        const errCount = bufferResults.filter((r) => r.mode === "error").length;
+        notes.push(
+          `Buffer: ${okCount} queued, ${errCount} errors, ${bufferResults.length} channel attempts`
+        );
+        // Mark platforms based on results
+        for (const r of bufferResults) {
+          if (r.service === "twitter" && r.success && r.mode === "queue") {
+            platforms.x = "AUTO";
+          }
+          if (r.service === "instagram" && r.success && r.mode === "queue") {
+            platforms.instagram = "AUTO";
+          }
+          if (r.service === "facebook" && r.success && r.mode === "queue") {
+            platforms.facebook = "AUTO";
+          }
+          if (r.service === "linkedin" && r.success && r.mode === "queue") {
+            platforms.linkedin = "AUTO";
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        notes.push(`Buffer publish failed (non-fatal): ${msg}`);
+        bufferResults = [
+          {
+            service: "buffer",
+            channelId: "",
+            channelName: "",
+            success: false,
+            mode: "error",
+            error: msg,
+            api: "rest",
+          },
+        ];
+      }
+    } else if (!isBufferConfigured()) {
+      notes.push(
+        "Buffer not configured — manual post pack available on /automation and /today"
+      );
+    } else {
+      notes.push("No poll URL available — skipped Buffer publish");
+    }
 
-    // Persist run log if service role available
     const admin = adminClient();
     if (admin) {
       await admin.from("automation_runs").insert({
@@ -185,6 +306,7 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
         poll_skipped_reason: pollSkippedReason,
         platforms,
         distribution,
+        buffer_results: bufferResults,
         headline_count: headlineCount,
         notes: notes.join(" | "),
       });
@@ -200,6 +322,7 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       pollSkippedReason,
       platforms,
       distribution,
+      bufferResults,
       headlineCount,
       notes,
       error: null,
@@ -211,6 +334,7 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       await admin.from("automation_runs").insert({
         status: "error",
         error,
+        buffer_results: bufferResults,
         notes: notes.join(" | "),
       });
     }
@@ -224,6 +348,7 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       pollSkippedReason: null,
       platforms,
       distribution: [],
+      bufferResults,
       headlineCount: 0,
       notes,
       error,

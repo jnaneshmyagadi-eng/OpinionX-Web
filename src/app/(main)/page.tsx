@@ -4,15 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { HomeFeed } from "@/components/home/home-feed";
 import { PeoplePollCard } from "@/components/discovery/people-poll-card";
 import { TrendCard } from "@/components/discovery/trend-card";
-import { fetchTrends } from "@/lib/trends";
-import { fetchTrendingPolls } from "@/lib/polls-public";
+import { buildDailyBrief } from "@/lib/daily-engine";
 import { absoluteUrl, SITE_NAME } from "@/lib/seo";
 import { formatRelativeShort } from "@/lib/trends";
 
 export const revalidate = 600;
 
 const HOME_DESC =
-  "Discover what's trending around the world, what's happening in India, the latest AI and money trends, and what people are voting on right now.";
+  "Daily discovery: what happened in the world and India, plus what people are deciding on OpinionX with real votes.";
 
 export const metadata: Metadata = {
   title: {
@@ -39,14 +38,8 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [world, india, money, ai, polls] = await Promise.all([
-    fetchTrends("world", 3),
-    fetchTrends("india", 3),
-    fetchTrends("money", 3),
-    fetchTrends("ai", 3),
-    fetchTrendingPolls(6),
-  ]);
-  const fetchedAt = new Date().toISOString();
+  const brief = await buildDailyBrief();
+  const polls = brief.topPolls;
 
   return (
     <div className="px-3 pb-4 pt-2">
@@ -58,21 +51,19 @@ export default async function HomePage() {
           What the Internet is talking about right now.
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Discover the world&apos;s biggest conversations, India&apos;s hottest
-          topics, emerging AI trends, money movements and real public opinions
-          — all in one place.
+          News tells you what happened. OpinionX tells you what people think —
+          with real votes only.
         </p>
         <p className="mt-2 text-[11px] text-zinc-600">
-          News tells you what happened. OpinionX tells you what people think.
-          {" · "}
-          Updated {formatRelativeShort(fetchedAt) || "just now"}
+          Daily brief {brief.dateKey} · Updated{" "}
+          {formatRelativeShort(brief.fetchedAt) || "just now"}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            href="/trending"
+            href="/today"
             className="rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white"
           >
-            Trending now
+            Today’s brief
           </Link>
           <Link
             href="/people"
@@ -81,10 +72,10 @@ export default async function HomePage() {
             What people decide
           </Link>
           <Link
-            href="/?refresh=1"
+            href="/trending"
             className="rounded-full border border-zinc-700 px-4 py-2 text-xs text-zinc-400"
           >
-            Refresh now
+            Trending
           </Link>
         </div>
       </header>
@@ -94,6 +85,7 @@ export default async function HomePage() {
         className="mb-6 flex gap-1.5 overflow-x-auto pb-1"
       >
         {[
+          { href: "/today", label: "📅 Today" },
           { href: "/world", label: "🌍 World" },
           { href: "/india", label: "🇮🇳 India" },
           { href: "/money", label: "💰 Money" },
@@ -111,14 +103,13 @@ export default async function HomePage() {
         ))}
       </nav>
 
-      {/* PEOPLE — differentiator first for logged-out & SEO */}
       <section className="mb-8" aria-labelledby="people-home">
         <div className="mb-3 flex items-end justify-between">
           <h2 id="people-home" className="text-sm font-semibold text-white">
-            👥 People — what people are deciding
+            👥 People — strongest debates right now
           </h2>
-          <Link href="/people" className="text-xs text-purple-400 hover:underline">
-            See all
+          <Link href="/today" className="text-xs text-purple-400 hover:underline">
+            Full brief
           </Link>
         </div>
         {polls.length === 0 ? (
@@ -138,53 +129,48 @@ export default async function HomePage() {
       </section>
 
       <Section
-        id="world"
-        title="🌍 World"
-        subtitle="What's exploding right now"
-        href="/world"
-        items={world.items}
-        empty={world.error}
+        id="india"
+        title="🇮🇳 India — what happened"
+        subtitle="Headlines from public sources"
+        href="/india"
+        items={brief.headlines.india.slice(0, 3)}
       />
       <Section
-        id="india"
-        title="🇮🇳 India"
-        subtitle="What Indians are talking about"
-        href="/india"
-        items={india.items}
-        empty={india.error}
+        id="world"
+        title="🌍 World — what happened"
+        subtitle="Global headlines"
+        href="/world"
+        items={brief.headlines.world.slice(0, 3)}
       />
       <Section
         id="money"
         title="💰 Money"
         subtitle="What's moving"
         href="/money"
-        items={money.items}
-        empty={money.error}
+        items={brief.headlines.money.slice(0, 2)}
       />
       <Section
         id="ai"
         title="🤖 AI & Tech"
         subtitle="What's new"
         href="/ai"
-        items={ai.items}
-        empty={ai.error}
+        items={brief.headlines.ai.slice(0, 2)}
       />
 
       <section className="mb-6 rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/30 p-4">
-        <h2 className="text-sm font-semibold text-white">📍 Your world</h2>
+        <h2 className="text-sm font-semibold text-white">Publish today’s debate</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Weather, traffic and local events — coming soon. For now, vote on what
-          people near you care about.
+          Open the daily brief for suggested A/B questions tied to headlines,
+          then publish with your account (no auto-votes).
         </p>
         <Link
-          href="/people"
+          href="/today"
           className="mt-2 inline-block text-xs text-purple-400 hover:underline"
         >
-          Browse live polls →
+          Open /today →
         </Link>
       </section>
 
-      {/* Existing social feed for logged-in users */}
       {user && (
         <>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
@@ -197,7 +183,7 @@ export default async function HomePage() {
       {!user && (
         <p className="mt-6 text-center text-xs text-zinc-600">
           <Link href="/about" className="text-purple-400 hover:underline">
-            About OpinionX
+            About
           </Link>
           {" · "}
           <Link
@@ -222,14 +208,19 @@ function Section({
   subtitle,
   href,
   items,
-  empty,
 }: {
   id: string;
   title: string;
   subtitle: string;
   href: string;
-  items: { title: string; url: string; source: string; publishedAt: string | null; summary: string; category: string }[];
-  empty?: string;
+  items: {
+    title: string;
+    url: string;
+    source: string;
+    publishedAt: string | null;
+    summary: string;
+    category: string;
+  }[];
 }) {
   return (
     <section className="mb-8" aria-labelledby={id}>
@@ -246,7 +237,7 @@ function Section({
       </div>
       {items.length === 0 ? (
         <p className="text-xs text-zinc-600">
-          {empty || "Headlines unavailable"} —{" "}
+          Headlines unavailable —{" "}
           <Link href="/people" className="text-purple-400">
             see polls
           </Link>

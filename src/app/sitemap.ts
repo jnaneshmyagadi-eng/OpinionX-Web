@@ -5,6 +5,7 @@ import { SITE_URL, SEO_CATEGORIES } from "@/lib/seo";
 export const revalidate = 3600;
 
 const DISCOVERY = [
+  "/today",
   "/world",
   "/india",
   "/money",
@@ -41,7 +42,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${SITE_URL}${path}`,
       lastModified: now,
       changeFrequency: "hourly" as const,
-      priority: path === "/trending" || path === "/people" ? 0.9 : 0.85,
+      priority:
+        path === "/today" || path === "/trending" || path === "/people"
+          ? 0.95
+          : 0.85,
     })),
     ...SEO_CATEGORIES.map((c) => ({
       url: `${SITE_URL}/polls/${c.slug}`,

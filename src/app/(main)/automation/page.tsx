@@ -69,12 +69,19 @@ export default async function AutomationDashboardPage() {
   ]);
   const last = runs[0] ?? null;
 
-  // Next cron estimate: every 6h from :00 UTC
+  // Next daily cron: 03:30 UTC = 09:00 IST
   const now = new Date();
-  const next = new Date(now);
-  next.setUTCMinutes(0, 0, 0);
-  next.setUTCHours(Math.ceil(now.getUTCHours() / 6) * 6);
-  if (next <= now) next.setUTCHours(next.getUTCHours() + 6);
+  const next = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      3,
+      30,
+      0
+    )
+  );
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
 
   return (
     <div className="px-3 py-4">
@@ -88,6 +95,10 @@ export default async function AutomationDashboardPage() {
         <p className="mt-2 text-sm text-zinc-400">
           Honest status only. Nothing is marked AUTO unless a real write API or
           secured server path is available.
+        </p>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          Vercel Hobby: cron runs once daily (03:30 UTC / 09:00 IST), not every
+          6 hours.
         </p>
       </header>
 
@@ -152,7 +163,7 @@ export default async function AutomationDashboardPage() {
                 {last.poll_url ? (
                   <a
                     href={last.poll_url}
-                    className="text-purple-400 underline break-all"
+                    className="break-all text-purple-400 underline"
                   >
                     {last.poll_url}
                   </a>
@@ -172,9 +183,7 @@ export default async function AutomationDashboardPage() {
             {last.error && (
               <div className="text-red-400">Error: {last.error}</div>
             )}
-            {last.notes && (
-              <div className="text-zinc-600">{last.notes}</div>
-            )}
+            {last.notes && <div className="text-zinc-600">{last.notes}</div>}
           </dl>
         ) : (
           <p className="mt-2 text-sm text-zinc-500">
@@ -184,12 +193,14 @@ export default async function AutomationDashboardPage() {
           </p>
         )}
         <p className="mt-3 text-[11px] text-zinc-600">
-          Next estimated cron (UTC every 6h): {next.toISOString()}
+          Next estimated cron: {next.toISOString()} (09:00 IST)
         </p>
       </section>
 
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
-        <h2 className="text-sm font-semibold text-white">Live metrics (real only)</h2>
+        <h2 className="text-sm font-semibold text-white">
+          Live metrics (real only)
+        </h2>
         <ul className="mt-2 space-y-1 text-xs text-zinc-400">
           <li>
             Headlines in brief:{" "}
@@ -229,32 +240,33 @@ export default async function AutomationDashboardPage() {
       </section>
 
       <section className="rounded-2xl border border-dashed border-zinc-700 p-4 text-xs text-zinc-500">
-        <h2 className="font-semibold text-zinc-300">Enable full auto poll create</h2>
+        <h2 className="font-semibold text-zinc-300">
+          Enable full auto poll create
+        </h2>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>
-            In Vercel → Project → Settings → Environment Variables, add:
+            Vercel → Project → Settings → Environment Variables:
             <ul className="mt-1 list-disc pl-4">
               <li>
                 <code>CRON_SECRET</code> — random long string
               </li>
               <li>
-                <code>SUPABASE_SERVICE_ROLE_KEY</code> — from Supabase settings
-                (server only, never NEXT_PUBLIC)
+                <code>SUPABASE_SERVICE_ROLE_KEY</code> — server only, never
+                NEXT_PUBLIC
               </li>
               <li>
-                <code>AUTOMATION_USER_ID</code> — your real profile UUID (polls
-                must have a valid creator_id)
+                <code>AUTOMATION_USER_ID</code> — your real profile UUID
               </li>
             </ul>
           </li>
           <li>Redeploy.</li>
           <li>
-            Cron hits <code>/api/cron/daily-growth</code> every 6 hours.
+            Cron: <code>/api/cron/daily-growth</code> daily 03:30 UTC.
           </li>
         </ol>
         <p className="mt-2">
-          Social channels stay MANUAL until you connect official write OAuth
-          (organic X is not available with X Ads alone).
+          Social channels stay MANUAL until official organic write OAuth is
+          connected. X Ads alone is not used (would spend money).
         </p>
       </section>
     </div>

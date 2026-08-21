@@ -1,15 +1,13 @@
 /**
- * Server-only Buffer client.
- * Supports:
- * 1) Modern GraphQL API — https://api.buffer.com (Bearer API key)
- * 2) Legacy REST API — https://api.bufferapp.com/1 (access_token)
- *
- * Never import this from client components.
+ * Server-only Buffer client (GraphQL primary, REST fallback).
+ * Never import from client components.
  */
+
+import { SITE_URL } from "@/lib/seo";
 
 export type BufferChannel = {
   id: string;
-  service: string; // twitter | instagram | facebook | linkedin | ...
+  service: string;
   name: string;
   username?: string;
 };
@@ -24,6 +22,7 @@ export type BufferPublishResult = {
   error?: string;
   textPreview?: string;
   api: "graphql" | "rest";
+  mediaUrl?: string;
 };
 
 export type BufferContentPack = {
@@ -45,7 +44,7 @@ export function isBufferConfigured(): boolean {
   return Boolean(token());
 }
 
-function mapService(raw: string): string {
+export function mapService(raw: string): string {
   const s = raw.toLowerCase();
   if (s.includes("twitter") || s === "x") return "twitter";
   if (s.includes("instagram")) return "instagram";
@@ -54,18 +53,32 @@ function mapService(raw: string): string {
   return s;
 }
 
-/** Platform-specific safe copy. No fabricated stats. */
+/** Services we may auto-publish when channel is connected */
+const AUTO_SERVICES = new Set(["twitter", "instagram", "facebook", "linkedin"]);
+
+export function shareCardImageUrl(pollId: string): string {
+  return `${SITE_URL}/api/og/poll?id=${encodeURIComponent(pollId)}`;
+}
+
 export function buildBufferContent(opts: {
   question: string;
   optionA: string;
   optionB: string;
   pollUrl: string;
+  pctA?: number | null;
+  pctB?: number | null;
+  totalVotes?: number;
 }): BufferContentPack {
   const q =
     opts.question.length > 160
       ? opts.question.slice(0, 157) + "…"
       : opts.question;
   const shortUrl = opts.pollUrl;
+  const hasVotes = (opts.totalVotes ?? 0) > 0 && opts.pctA != null;
+
+  const resultLine = hasVotes
+    ? `Live: ${opts.pctA}% ${opts.optionA} vs ${opts.pctB}% ${opts.optionB} (${opts.totalVotes} real votes)`
+    : null;
 
   const twitter = [
     `India, what would YOU choose?`,
@@ -74,10 +87,14 @@ export function buildBufferContent(opts: {
     ``,
     `A) ${opts.optionA}`,
     `B) ${opts.optionB}`,
+    resultLine ? `` : null,
+    resultLine,
     ``,
     `Vote → ${shortUrl}`,
     `#LetTheInternetDecide`,
-  ].join("\n");
+  ]
+    .filter((x) => x !== null)
+    .join("\n");
 
   const instagram = [
     `Quick vote 👀`,
@@ -85,12 +102,15 @@ export function buildBufferContent(opts: {
     q,
     ``,
     `${opts.optionA} vs ${opts.optionB}`,
+    resultLine,
     ``,
-    `Tap the link in bio / story link to vote on OpinionX.`,
+    `Link in bio / vote on OpinionX`,
+    shortUrl,
     ``,
     `#OpinionX #LetTheInternetDecide #IndiaDebates`,
-    shortUrl,
-  ].join("\n");
+  ]
+    .filter((x) => x !== null && x !== undefined)
+    .join("\n");
 
   const facebook = [
     `Open discussion:`,
@@ -98,26 +118,33 @@ export function buildBufferContent(opts: {
     ``,
     `Option A: ${opts.optionA}`,
     `Option B: ${opts.optionB}`,
+    resultLine,
     ``,
-    `Curious what this community thinks — vote here (real authenticated votes only):`,
+    `Real authenticated votes only:`,
     shortUrl,
-  ].join("\n");
+  ]
+    .filter((x) => x !== null && x !== undefined)
+    .join("\n");
 
   const linkedin = [
-    `A career / life trade-off worth discussing:`,
+    `A trade-off worth discussing:`,
     ``,
     q,
     ``,
     `A — ${opts.optionA}`,
     `B — ${opts.optionB}`,
+    resultLine,
     ``,
-    `Would love thoughtful takes. Cast a vote (no bots):`,
+    `Cast a vote (no bots):`,
     shortUrl,
-  ].join("\n");
+  ]
+    .filter((x) => x !== null && x !== undefined)
+    .join("\n");
 
-  // X hard limit ~280; trim if needed
   const twitterTrimmed =
-    twitter.length > 275 ? `${q}\n\nA) ${opts.optionA}\nB) ${opts.optionB}\n${shortUrl}` : twitter;
+    twitter.length > 275
+      ? `${q}\n\nA) ${opts.optionA}\nB) ${opts.optionB}\n${shortUrl}`
+      : twitter;
 
   return {
     twitter: twitterTrimmed.slice(0, 280),
@@ -141,9 +168,6 @@ function textForService(pack: BufferContentPack, service: string): string {
       return pack.facebook;
   }
 }
-
-/** Services we auto-publish via Buffer */
-const AUTO_SERVICES = new Set(["twitter", "instagram", "facebook", "linkedin"]);
 
 async function graphqlRequest(
   accessToken: string,
@@ -172,8 +196,6 @@ async function listChannelsGraphQL(
   accessToken: string
 ): Promise<BufferChannel[]> {
   const orgId = process.env.BUFFER_ORGANIZATION_ID?.trim();
-
-  // Discover org if not set
   let organizationId = orgId;
   if (!organizationId) {
     const orgQuery = `query {
@@ -209,9 +231,10 @@ async function listChannelsGraphQL(
   if (res.errors?.length) {
     throw new Error(res.errors.map((e) => e.message).join("; "));
   }
-  const channels = (res.data?.channels as
-    | { id: string; name: string; service: string }[]
-    | undefined) ?? [];
+  const channels =
+    (res.data?.channels as
+      | { id: string; name: string; service: string }[]
+      | undefined) ?? [];
   return channels.map((c) => ({
     id: c.id,
     name: c.name,
@@ -221,21 +244,52 @@ async function listChannelsGraphQL(
 
 async function createPostGraphQL(
   accessToken: string,
-  channelId: string,
-  text: string
+  opts: {
+    channelId: string;
+    text: string;
+    service: string;
+    imageUrl?: string;
+  }
 ): Promise<{ id?: string; error?: string }> {
-  // Escape for GraphQL string
-  const safe = text
+  const safe = opts.text
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
     .replace(/\n/g, "\\n");
 
+  const service = mapService(opts.service);
+  const needsImage = service === "instagram";
+  const imageUrl = opts.imageUrl;
+
+  if (needsImage && !imageUrl) {
+    return { error: "Instagram requires a public image URL" };
+  }
+
+  let assetsBlock = "";
+  if (imageUrl) {
+    const safeUrl = imageUrl.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    assetsBlock = `
+      assets: [
+        {
+          image: {
+            url: "${safeUrl}"
+          }
+        }
+      ]`;
+  }
+
+  // Instagram requires type metadata
+  let metadataBlock = "";
+  if (service === "instagram") {
+    metadataBlock = `
+      metadata: { instagram: { type: post, shouldShareToFeed: true } }`;
+  }
+
   const mutation = `mutation {
     createPost(input: {
       text: "${safe}"
-      channelId: "${channelId}"
+      channelId: "${opts.channelId}"
       schedulingType: automatic
-      mode: addToQueue
+      mode: addToQueue${assetsBlock}${metadataBlock}
     }) {
       ... on PostActionSuccess {
         post { id text status }
@@ -263,7 +317,9 @@ async function listProfilesRest(accessToken: string): Promise<BufferChannel[]> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Buffer REST profiles HTTP ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(
+      `Buffer REST profiles HTTP ${res.status}: ${body.slice(0, 200)}`
+    );
   }
   const data = (await res.json()) as {
     id: string;
@@ -286,16 +342,14 @@ async function createUpdateRest(
   accessToken: string,
   profileId: string,
   text: string,
-  link?: string
+  media?: { link?: string; photo?: string }
 ): Promise<{ id?: string; error?: string }> {
   const body = new URLSearchParams();
   body.set("access_token", accessToken);
   body.set("text", text);
   body.append("profile_ids[]", profileId);
-  if (link) {
-    body.set("media[link]", link);
-  }
-  // Add to queue (default). now=true would share immediately.
+  if (media?.link) body.set("media[link]", media.link);
+  if (media?.photo) body.set("media[photo]", media.photo);
 
   const res = await fetch(`${REST_BASE}/updates/create.json`, {
     method: "POST",
@@ -309,7 +363,6 @@ async function createUpdateRest(
     updates?: { id: string }[];
     message?: string;
     error?: string;
-    code?: number;
   };
 
   if (!res.ok || json.success === false) {
@@ -334,7 +387,6 @@ export async function listBufferChannels(): Promise<{
     return { channels: [], api: "rest", error: "BUFFER_ACCESS_TOKEN not set" };
   }
 
-  // Prefer GraphQL (current Buffer API keys)
   try {
     const channels = await listChannelsGraphQL(accessToken);
     return { channels, api: "graphql" };
@@ -354,17 +406,34 @@ export async function listBufferChannels(): Promise<{
   }
 }
 
-/**
- * Publish/queue one post per supported Buffer channel.
- * Skips reddit/whatsapp and unknown services.
- * Dedup: caller should pass alreadyPublishedKeys = "service:pollId"
- */
+/** Connected services among twitter/instagram/facebook/linkedin */
+export async function getConnectedAutoServices(): Promise<{
+  services: Set<string>;
+  error?: string;
+}> {
+  if (!isBufferConfigured()) {
+    return { services: new Set(), error: "BUFFER_ACCESS_TOKEN not set" };
+  }
+  const listed = await listBufferChannels();
+  if (listed.error) return { services: new Set(), error: listed.error };
+  const services = new Set<
+    string
+  >();
+  for (const ch of listed.channels) {
+    const s = mapService(ch.service);
+    if (AUTO_SERVICES.has(s)) services.add(s);
+  }
+  return { services };
+}
+
 export async function publishPollToBuffer(opts: {
   pollId: string;
   question: string;
   optionA: string;
   optionB: string;
   pollUrl: string;
+  voteCountA?: number;
+  voteCountB?: number;
   alreadyPublishedKeys: Set<string>;
 }): Promise<BufferPublishResult[]> {
   const accessToken = token();
@@ -397,13 +466,23 @@ export async function publishPollToBuffer(opts: {
     ];
   }
 
+  const a = opts.voteCountA ?? 0;
+  const b = opts.voteCountB ?? 0;
+  const total = a + b;
+  const pctA = total > 0 ? Math.round((a / total) * 100) : null;
+  const pctB = total > 0 && pctA !== null ? 100 - pctA : null;
+
   const pack = buildBufferContent({
     question: opts.question,
     optionA: opts.optionA,
     optionB: opts.optionB,
     pollUrl: opts.pollUrl,
+    pctA,
+    pctB,
+    totalVotes: total,
   });
 
+  const mediaUrl = shareCardImageUrl(opts.pollId);
   const results: BufferPublishResult[] = [];
 
   for (const ch of listed.channels) {
@@ -436,10 +515,18 @@ export async function publishPollToBuffer(opts: {
     }
 
     const text = textForService(pack, service);
+    // Instagram always needs image; FB/LI can attach share card too
+    const attachImage =
+      service === "instagram" || service === "facebook" || service === "linkedin";
 
     try {
       if (listed.api === "graphql") {
-        const created = await createPostGraphQL(accessToken, ch.id, text);
+        const created = await createPostGraphQL(accessToken, {
+          channelId: ch.id,
+          text,
+          service,
+          imageUrl: attachImage ? mediaUrl : undefined,
+        });
         if (created.id) {
           results.push({
             service,
@@ -450,6 +537,7 @@ export async function publishPollToBuffer(opts: {
             mode: "queue",
             textPreview: text.slice(0, 80),
             api: "graphql",
+            mediaUrl: attachImage ? mediaUrl : undefined,
           });
         } else {
           results.push({
@@ -460,15 +548,14 @@ export async function publishPollToBuffer(opts: {
             mode: "error",
             error: created.error || "create failed",
             api: "graphql",
+            mediaUrl: attachImage ? mediaUrl : undefined,
           });
         }
       } else {
-        const created = await createUpdateRest(
-          accessToken,
-          ch.id,
-          text,
-          opts.pollUrl
-        );
+        const created = await createUpdateRest(accessToken, ch.id, text, {
+          link: opts.pollUrl,
+          photo: attachImage ? mediaUrl : undefined,
+        });
         if (created.id) {
           results.push({
             service,
@@ -479,6 +566,7 @@ export async function publishPollToBuffer(opts: {
             mode: "queue",
             textPreview: text.slice(0, 80),
             api: "rest",
+            mediaUrl: attachImage ? mediaUrl : undefined,
           });
         } else {
           results.push({
@@ -489,6 +577,7 @@ export async function publishPollToBuffer(opts: {
             mode: "error",
             error: created.error || "create failed",
             api: "rest",
+            mediaUrl: attachImage ? mediaUrl : undefined,
           });
         }
       }

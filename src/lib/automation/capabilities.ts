@@ -1,8 +1,11 @@
 /**
- * Honest capability matrix for connected write channels.
+ * Honest capability matrix — Buffer platforms only AUTO when channel is connected.
  */
 
-import { isBufferConfigured } from "@/lib/automation/buffer-client";
+import {
+  isBufferConfigured,
+  getConnectedAutoServices,
+} from "@/lib/automation/buffer-client";
 
 export type PlatformStatus = "AUTO" | "MANUAL" | "UNAVAILABLE";
 
@@ -17,61 +20,70 @@ export type CapabilityReport = {
   poll_auto_create: PlatformStatus;
   buffer: PlatformStatus;
   reasons: Record<string, string>;
+  connectedServices: string[];
 };
 
-export function getCapabilityReport(): CapabilityReport {
+export async function getCapabilityReport(): Promise<CapabilityReport> {
   const hasServiceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const hasAutomationUser = Boolean(process.env.AUTOMATION_USER_ID);
   const hasCronSecret = Boolean(process.env.CRON_SECRET);
   const hasBuffer = isBufferConfigured();
 
   const pollAuto =
-    hasServiceRole && hasAutomationUser && hasCronSecret
-      ? "AUTO"
-      : "MANUAL";
+    hasServiceRole && hasAutomationUser ? "AUTO" : "MANUAL";
 
-  // When Buffer token is set, X/IG/FB/LI can be AUTO via Buffer channels
-  // (actual publish depends on which channels are connected in Buffer account).
-  const viaBuffer: PlatformStatus = hasBuffer ? "AUTO" : "UNAVAILABLE";
+  let connected = new Set<string>();
+  let bufferErr: string | undefined;
+  if (hasBuffer) {
+    const listed = await getConnectedAutoServices();
+    connected = listed.services;
+    bufferErr = listed.error;
+  }
+
+  const statusFor = (service: string): PlatformStatus => {
+    if (!hasBuffer) return "UNAVAILABLE";
+    if (bufferErr) return "UNAVAILABLE";
+    return connected.has(service) ? "AUTO" : "UNAVAILABLE";
+  };
 
   return {
-    x_organic: viaBuffer,
-    x_ads_only: true, // still never use X Ads spend path
-    instagram: viaBuffer,
-    facebook: viaBuffer,
-    linkedin: viaBuffer,
+    x_organic: statusFor("twitter"),
+    x_ads_only: true,
+    instagram: statusFor("instagram"),
+    facebook: statusFor("facebook"),
+    linkedin: statusFor("linkedin"),
     reddit: "UNAVAILABLE",
     whatsapp: "MANUAL",
     poll_auto_create: pollAuto,
-    buffer: hasBuffer ? "AUTO" : "UNAVAILABLE",
+    buffer: hasBuffer && !bufferErr ? "AUTO" : "UNAVAILABLE",
+    connectedServices: Array.from(connected),
     reasons: {
       buffer: hasBuffer
-        ? "BUFFER_ACCESS_TOKEN set. Server will queue posts to connected Buffer channels (X/IG/FB/LI)."
-        : "Set BUFFER_ACCESS_TOKEN in Vercel (server-only) to enable Buffer publishing.",
-      x_organic: hasBuffer
-        ? "Via Buffer (not X Ads). Posts queue to your Buffer Twitter/X channel if connected."
-        : "No Buffer token. Direct X organic API not connected; X Ads not used.",
-      x_ads:
-        "X Ads can spend money. Automation never creates paid ads.",
-      instagram: hasBuffer
-        ? "Via Buffer Instagram channel if connected in your Buffer account."
-        : "No Buffer token / no Instagram publishing API.",
-      facebook: hasBuffer
-        ? "Via Buffer Facebook channel if connected."
-        : "No Buffer token / no Facebook Page API.",
-      linkedin: hasBuffer
-        ? "Via Buffer LinkedIn channel if connected."
-        : "No Buffer token / no LinkedIn API.",
-      reddit: "Kept MANUAL — no auto-spam to subreddits.",
-      whatsapp:
-        "Share-ready text only. No WhatsApp Business API.",
-      poll_auto_create: hasServiceRole && hasAutomationUser && hasCronSecret
-        ? "Service role + AUTOMATION_USER_ID + CRON_SECRET configured."
-        : "Missing env: " +
+        ? bufferErr
+          ? `Buffer token set but channel list failed: ${bufferErr}`
+          : `Buffer OK. Connected: ${Array.from(connected).join(", ") || "none of X/IG/FB/LI"}`
+        : "Set BUFFER_ACCESS_TOKEN in Vercel (server-only).",
+      x_organic: connected.has("twitter")
+        ? "X channel connected in Buffer — AUTO."
+        : "X/Twitter channel not connected in Buffer.",
+      x_ads: "X Ads never used (paid).",
+      instagram: connected.has("instagram")
+        ? "Instagram connected — posts use generated share-card image."
+        : "Instagram not connected in Buffer.",
+      facebook: connected.has("facebook")
+        ? "Facebook channel connected in Buffer."
+        : "Facebook not connected in Buffer — UNAVAILABLE until connected.",
+      linkedin: connected.has("linkedin")
+        ? "LinkedIn channel connected in Buffer."
+        : "LinkedIn not connected in Buffer — UNAVAILABLE until connected.",
+      reddit: "Kept UNAVAILABLE — no auto-spam.",
+      whatsapp: "Share-ready text only.",
+      poll_auto_create: hasServiceRole && hasAutomationUser
+        ? "Service role + AUTOMATION_USER_ID — uses automation_create_poll RPC."
+        : "Missing: " +
           [
             !hasServiceRole && "SUPABASE_SERVICE_ROLE_KEY",
             !hasAutomationUser && "AUTOMATION_USER_ID",
-            !hasCronSecret && "CRON_SECRET",
           ]
             .filter(Boolean)
             .join(", "),

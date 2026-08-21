@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildDailyBrief, type SuggestedDebate } from "@/lib/daily-engine";
 import { getCapabilityReport } from "@/lib/automation/capabilities";
 import {
@@ -22,12 +22,17 @@ export type PipelineResult = {
   headlineCount: number;
   notes: string[];
   error: string | null;
+  logId: string | null;
 };
 
-function adminClient() {
+function adminClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
+  // Detect accidental anon key (does not bypass RLS)
+  if (key.startsWith("eyJ") && key.length < 200) {
+    // still try — JWT length varies
+  }
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -44,7 +49,7 @@ async function alreadyExists(question: string): Promise<boolean> {
     .from("polls")
     .select("id, question")
     .eq("is_active", true)
-    .limit(100);
+    .limit(150);
   const n = normalizeQuestion(question);
   return (data ?? []).some((p) => normalizeQuestion(p.question) === n);
 }
@@ -55,7 +60,7 @@ async function createPollAsAutomation(
   const supabase = adminClient();
   const userId = process.env.AUTOMATION_USER_ID;
   if (!supabase || !userId) {
-    return { error: "Missing service role or AUTOMATION_USER_ID" };
+    return { error: "Missing SUPABASE_SERVICE_ROLE_KEY or AUTOMATION_USER_ID" };
   }
 
   if (await alreadyExists(suggestion.question)) {
@@ -69,6 +74,31 @@ async function createPollAsAutomation(
     return { error: "Missing options" };
   }
 
+  const category =
+    suggestion.hub === "ai"
+      ? "tech"
+      : suggestion.hub === "money"
+        ? "career"
+        : "general";
+
+  // Prefer SECURITY DEFINER RPC (bypasses client RLS safely; EXECUTE only service_role)
+  const { data: rpcId, error: rpcError } = await supabase.rpc(
+    "automation_create_poll",
+    {
+      p_creator_id: userId,
+      p_question: suggestion.question.trim(),
+      p_option_a: suggestion.optionA.trim().slice(0, 100),
+      p_option_b: suggestion.optionB.trim().slice(0, 100),
+      p_category: category,
+      p_mood: "curious",
+    }
+  );
+
+  if (!rpcError && rpcId) {
+    return { id: rpcId as string };
+  }
+
+  // Fallback direct insert with service role (should bypass RLS if key is correct)
   const { data, error } = await supabase
     .from("polls")
     .insert({
@@ -76,12 +106,7 @@ async function createPollAsAutomation(
       question: suggestion.question.trim(),
       option_a: suggestion.optionA.trim().slice(0, 100),
       option_b: suggestion.optionB.trim().slice(0, 100),
-      category:
-        suggestion.hub === "ai"
-          ? "tech"
-          : suggestion.hub === "money"
-            ? "career"
-            : "general",
+      category,
       mood: "curious",
       is_active: true,
       vote_count_a: 0,
@@ -91,9 +116,89 @@ async function createPollAsAutomation(
     .single();
 
   if (error || !data) {
-    return { error: error?.message || "Insert failed" };
+    return {
+      error:
+        rpcError?.message ||
+        error?.message ||
+        "Insert failed — verify SUPABASE_SERVICE_ROLE_KEY is the service_role secret, not anon",
+    };
   }
   return { id: data.id as string };
+}
+
+async function logRun(payload: {
+  status: string;
+  topic?: string | null;
+  poll_id?: string | null;
+  poll_url?: string | null;
+  poll_created?: boolean;
+  poll_skipped_reason?: string | null;
+  platforms?: Record<string, string>;
+  distribution?: unknown;
+  buffer_results?: unknown;
+  headline_count?: number;
+  notes?: string;
+  error?: string | null;
+}): Promise<{ id: string | null; error: string | null }> {
+  const supabase = adminClient();
+  if (!supabase) {
+    return {
+      id: null,
+      error: "SUPABASE_SERVICE_ROLE_KEY missing — cannot persist automation_runs",
+    };
+  }
+
+  const { data: rpcId, error: rpcError } = await supabase.rpc(
+    "automation_log_run",
+    {
+      p_status: payload.status,
+      p_topic: payload.topic ?? null,
+      p_poll_id: payload.poll_id ?? null,
+      p_poll_url: payload.poll_url ?? null,
+      p_poll_created: payload.poll_created ?? false,
+      p_poll_skipped_reason: payload.poll_skipped_reason ?? null,
+      p_platforms: payload.platforms ?? {},
+      p_distribution: payload.distribution ?? [],
+      p_buffer_results: payload.buffer_results ?? [],
+      p_headline_count: payload.headline_count ?? 0,
+      p_notes: payload.notes ?? null,
+      p_error: payload.error ?? null,
+    }
+  );
+
+  if (!rpcError && rpcId) {
+    return { id: rpcId as string, error: null };
+  }
+
+  const { data, error } = await supabase
+    .from("automation_runs")
+    .insert({
+      status: payload.status,
+      topic: payload.topic ?? null,
+      poll_id: payload.poll_id ?? null,
+      poll_url: payload.poll_url ?? null,
+      poll_created: payload.poll_created ?? false,
+      poll_skipped_reason: payload.poll_skipped_reason ?? null,
+      platforms: payload.platforms ?? {},
+      distribution: payload.distribution ?? [],
+      buffer_results: payload.buffer_results ?? [],
+      headline_count: payload.headline_count ?? 0,
+      notes: payload.notes ?? null,
+      error: payload.error ?? null,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    return {
+      id: null,
+      error:
+        rpcError?.message ||
+        error?.message ||
+        "automation_runs insert failed",
+    };
+  }
+  return { id: data.id as string, error: null };
 }
 
 async function loadPublishedKeys(pollId: string): Promise<Set<string>> {
@@ -119,28 +224,26 @@ async function loadPublishedKeys(pollId: string): Promise<Set<string>> {
   return keys;
 }
 
-async function fetchPollOptions(pollId: string): Promise<{
+async function fetchPollRow(pollId: string): Promise<{
   question: string;
   option_a: string;
   option_b: string;
+  vote_count_a: number;
+  vote_count_b: number;
 } | null> {
   const supabase = adminClient();
-  if (!supabase) {
-    // public anon fallback
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return null;
-    const client = createClient(url, key);
-    const { data } = await client
-      .from("polls")
-      .select("question, option_a, option_b")
-      .eq("id", pollId)
-      .maybeSingle();
-    return data;
-  }
-  const { data } = await supabase
+  const client =
+    supabase ||
+    (() => {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!url || !key) return null;
+      return createClient(url, key);
+    })();
+  if (!client) return null;
+  const { data } = await client
     .from("polls")
-    .select("question, option_a, option_b")
+    .select("question, option_a, option_b, vote_count_a, vote_count_b")
     .eq("id", pollId)
     .maybeSingle();
   return data;
@@ -148,7 +251,7 @@ async function fetchPollOptions(pollId: string): Promise<{
 
 export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
   const ranAt = new Date().toISOString();
-  const caps = getCapabilityReport();
+  const caps = await getCapabilityReport();
   const notes: string[] = [];
   const platforms: PipelineResult["platforms"] = {
     x: caps.x_organic,
@@ -160,11 +263,15 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
     buffer: caps.buffer,
   };
 
+  notes.push(
+    `Connected Buffer services: ${caps.connectedServices.join(", ") || "none"}`
+  );
   if (caps.x_ads_only) {
     notes.push("X Ads path disabled (no paid spend).");
   }
 
   let bufferResults: BufferPublishResult[] = [];
+  let logId: string | null = null;
 
   try {
     const brief = await buildDailyBrief();
@@ -187,10 +294,10 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       topExisting?.question ?? suggestion?.question ?? "Daily brief ready";
     let optionA = topExisting?.option_a ?? suggestion?.optionA ?? "Option A";
     let optionB = topExisting?.option_b ?? suggestion?.optionB ?? "Option B";
+    let voteA = topExisting?.vote_count_a ?? 0;
+    let voteB = topExisting?.vote_count_b ?? 0;
 
-    const existingVotes = topExisting
-      ? topExisting.vote_count_a + topExisting.vote_count_b
-      : 0;
+    const existingVotes = voteA + voteB;
 
     if (caps.poll_auto_create === "AUTO" && suggestion) {
       if (existingVotes >= 5) {
@@ -206,6 +313,8 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
           topic = suggestion.question;
           optionA = suggestion.optionA;
           optionB = suggestion.optionB;
+          voteA = 0;
+          voteB = 0;
           notes.push(`Auto-created poll ${created.id}`);
         } else {
           pollSkippedReason = created.error;
@@ -221,13 +330,14 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       notes.push("Poll auto-create disabled — env incomplete");
     }
 
-    // Refresh options from DB if we only have id
     if (pollId) {
-      const row = await fetchPollOptions(pollId);
+      const row = await fetchPollRow(pollId);
       if (row) {
         topic = row.question;
         optionA = row.option_a;
         optionB = row.option_b;
+        voteA = Number(row.vote_count_a) || 0;
+        voteB = Number(row.vote_count_b) || 0;
       }
     }
 
@@ -238,7 +348,12 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       url: d.url,
     }));
 
-    // Buffer publish (non-fatal)
+    // Reset publish statuses to UNAVAILABLE unless Buffer confirms
+    platforms.x = caps.x_organic;
+    platforms.instagram = caps.instagram;
+    platforms.facebook = caps.facebook;
+    platforms.linkedin = caps.linkedin;
+
     if (pollId && pollUrl && isBufferConfigured()) {
       try {
         const already = await loadPublishedKeys(pollId);
@@ -248,6 +363,8 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
           optionA,
           optionB,
           pollUrl,
+          voteCountA: voteA,
+          voteCountB: voteB,
           alreadyPublishedKeys: already,
         });
         const okCount = bufferResults.filter(
@@ -257,19 +374,30 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
         notes.push(
           `Buffer: ${okCount} queued, ${errCount} errors, ${bufferResults.length} channel attempts`
         );
-        // Mark platforms based on results
+
+        // Only mark AUTO when Buffer returned an update ID
+        platforms.x = "UNAVAILABLE";
+        platforms.instagram = "UNAVAILABLE";
+        platforms.facebook = "UNAVAILABLE";
+        platforms.linkedin = "UNAVAILABLE";
         for (const r of bufferResults) {
-          if (r.service === "twitter" && r.success && r.mode === "queue") {
-            platforms.x = "AUTO";
-          }
-          if (r.service === "instagram" && r.success && r.mode === "queue") {
-            platforms.instagram = "AUTO";
-          }
-          if (r.service === "facebook" && r.success && r.mode === "queue") {
-            platforms.facebook = "AUTO";
-          }
-          if (r.service === "linkedin" && r.success && r.mode === "queue") {
-            platforms.linkedin = "AUTO";
+          if (!(r.success && r.mode === "queue" && r.updateId)) continue;
+          if (r.service === "twitter") platforms.x = "AUTO";
+          if (r.service === "instagram") platforms.instagram = "AUTO";
+          if (r.service === "facebook") platforms.facebook = "AUTO";
+          if (r.service === "linkedin") platforms.linkedin = "AUTO";
+        }
+        // Keep connected-but-failed as MANUAL for founder awareness
+        for (const r of bufferResults) {
+          if (r.mode === "error") {
+            if (r.service === "twitter" && platforms.x !== "AUTO")
+              platforms.x = "MANUAL";
+            if (r.service === "instagram" && platforms.instagram !== "AUTO")
+              platforms.instagram = "MANUAL";
+            if (r.service === "facebook" && platforms.facebook !== "AUTO")
+              platforms.facebook = "MANUAL";
+            if (r.service === "linkedin" && platforms.linkedin !== "AUTO")
+              platforms.linkedin = "MANUAL";
           }
         }
       } catch (e) {
@@ -295,21 +423,25 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       notes.push("No poll URL available — skipped Buffer publish");
     }
 
-    const admin = adminClient();
-    if (admin) {
-      await admin.from("automation_runs").insert({
-        status: "ok",
-        topic,
-        poll_id: pollId,
-        poll_url: pollUrl,
-        poll_created: pollCreated,
-        poll_skipped_reason: pollSkippedReason,
-        platforms,
-        distribution,
-        buffer_results: bufferResults,
-        headline_count: headlineCount,
-        notes: notes.join(" | "),
-      });
+    const logged = await logRun({
+      status: "ok",
+      topic,
+      poll_id: pollId,
+      poll_url: pollUrl,
+      poll_created: pollCreated,
+      poll_skipped_reason: pollSkippedReason,
+      platforms,
+      distribution,
+      buffer_results: bufferResults,
+      headline_count: headlineCount,
+      notes: notes.join(" | "),
+      error: null,
+    });
+    logId = logged.id;
+    if (logged.error) {
+      notes.push(`Log persist failed: ${logged.error}`);
+    } else if (logId) {
+      notes.push(`Logged automation_runs id=${logId}`);
     }
 
     return {
@@ -326,18 +458,17 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       headlineCount,
       notes,
       error: null,
+      logId,
     };
   } catch (e) {
     const error = e instanceof Error ? e.message : "Pipeline failed";
-    const admin = adminClient();
-    if (admin) {
-      await admin.from("automation_runs").insert({
-        status: "error",
-        error,
-        buffer_results: bufferResults,
-        notes: notes.join(" | "),
-      });
-    }
+    const logged = await logRun({
+      status: "error",
+      error,
+      buffer_results: bufferResults,
+      notes: notes.join(" | "),
+    });
+    logId = logged.id;
     return {
       ok: false,
       ranAt,
@@ -352,6 +483,7 @@ export async function runDailyGrowthPipeline(): Promise<PipelineResult> {
       headlineCount: 0,
       notes,
       error,
+      logId,
     };
   }
 }

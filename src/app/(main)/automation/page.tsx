@@ -24,6 +24,7 @@ type BufferResultRow = {
   updateId?: string;
   error?: string;
   api?: string;
+  mediaUrl?: string;
 };
 
 type RunRow = {
@@ -74,7 +75,7 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export default async function AutomationDashboardPage() {
-  const caps = getCapabilityReport();
+  const caps = await getCapabilityReport();
   const [runs, brief] = await Promise.all([
     fetchLatestRuns(),
     buildDailyBrief(),
@@ -109,17 +110,20 @@ export default async function AutomationDashboardPage() {
           Daily growth automation
         </h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Honest status only. Buffer publishes only when{" "}
-          <code className="text-zinc-300">BUFFER_ACCESS_TOKEN</code> is set and
-          channels are connected in Buffer.
-        </p>
-        <p className="mt-1 text-[11px] text-zinc-600">
-          Cron: daily 03:30 UTC (09:00 IST) · Hobby plan limit
+          AUTO only when Buffer confirms a channel is connected and returns an
+          update ID. Facebook / LinkedIn stay UNAVAILABLE until connected in
+          Buffer.
         </p>
       </header>
 
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
         <h2 className="text-sm font-semibold text-white">Platform matrix</h2>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          Connected now:{" "}
+          {caps.connectedServices.length
+            ? caps.connectedServices.join(", ")
+            : "none"}
+        </p>
         <ul className="mt-3 space-y-2 text-sm">
           {(
             [
@@ -155,8 +159,7 @@ export default async function AutomationDashboardPage() {
         </p>
         {bufferResults.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500">
-            No Buffer results on the latest run. Either cron has not run, token is
-            missing, or no poll was available.
+            No Buffer results on the latest run.
           </p>
         ) : (
           <ul className="mt-3 space-y-2">
@@ -185,9 +188,12 @@ export default async function AutomationDashboardPage() {
                 {r.updateId && (
                   <p className="mt-1 text-zinc-500">Update ID: {r.updateId}</p>
                 )}
-                {r.api && (
-                  <p className="text-zinc-600">API: {r.api}</p>
+                {r.mediaUrl && (
+                  <p className="mt-1 break-all text-zinc-600">
+                    Media: {r.mediaUrl}
+                  </p>
                 )}
+                {r.api && <p className="text-zinc-600">API: {r.api}</p>}
                 {r.error && (
                   <p className="mt-1 text-red-400/90">{r.error}</p>
                 )}
@@ -253,9 +259,7 @@ export default async function AutomationDashboardPage() {
           </dl>
         ) : (
           <p className="mt-2 text-sm text-zinc-500">
-            No runs logged yet. Needs daily cron +{" "}
-            <code className="text-zinc-400">SUPABASE_SERVICE_ROLE_KEY</code> to
-            write logs.
+            No runs logged yet.
           </p>
         )}
         <p className="mt-3 text-[11px] text-zinc-600">
@@ -263,69 +267,35 @@ export default async function AutomationDashboardPage() {
         </p>
       </section>
 
-      <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
-        <h2 className="text-sm font-semibold text-white">
-          Live metrics (real only)
-        </h2>
-        <ul className="mt-2 space-y-1 text-xs text-zinc-400">
-          <li>
-            Headlines in brief:{" "}
-            {brief.headlines.india.length +
-              brief.headlines.world.length +
-              brief.headlines.money.length +
-              brief.headlines.ai.length}
-          </li>
-          <li>Active polls in brief: {brief.topPolls.length}</li>
-          <li>
-            Real votes on top polls:{" "}
-            {brief.topPolls.reduce(
-              (n, p) => n + p.vote_count_a + p.vote_count_b,
-              0
-            )}
-          </li>
-        </ul>
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <Link href="/today" className="text-purple-400 hover:underline">
-            /today
-          </Link>
-          <Link href="/people" className="text-purple-400 hover:underline">
-            /people
-          </Link>
-        </div>
-      </section>
-
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-white">
-          Manual publish pack (fallback if Buffer fails)
+          Manual publish pack (fallback)
         </h2>
         <DistributionList items={brief.distribution} />
       </section>
 
       <section className="rounded-2xl border border-dashed border-zinc-700 p-4 text-xs text-zinc-500">
-        <h2 className="font-semibold text-zinc-300">Vercel env checklist</h2>
+        <h2 className="font-semibold text-zinc-300">Env checklist</h2>
         <ul className="mt-2 list-disc space-y-1 pl-4">
           <li>
-            <code>BUFFER_ACCESS_TOKEN</code> — Buffer API key or legacy access
-            token (server only)
+            <code>SUPABASE_SERVICE_ROLE_KEY</code> — must be service_role secret
+            (not anon)
           </li>
           <li>
-            <code>BUFFER_ORGANIZATION_ID</code> — optional; needed for GraphQL
-            channel list if auto-discovery fails
+            <code>AUTOMATION_USER_ID</code> — real profile UUID
           </li>
           <li>
-            <code>SUPABASE_SERVICE_ROLE_KEY</code> — log runs + optional poll
-            create
+            <code>BUFFER_ACCESS_TOKEN</code>
           </li>
           <li>
-            <code>AUTOMATION_USER_ID</code> — profile UUID for auto polls
+            <code>BUFFER_ORGANIZATION_ID</code> — optional
           </li>
           <li>
-            <code>CRON_SECRET</code> — protect manual cron triggers
+            <code>CRON_SECRET</code>
           </li>
         </ul>
         <p className="mt-2">
-          Connect X / Instagram / Facebook / LinkedIn inside your Buffer account.
-          Reddit & WhatsApp stay manual.
+          Connect Facebook / LinkedIn inside Buffer to enable those channels.
         </p>
       </section>
     </div>

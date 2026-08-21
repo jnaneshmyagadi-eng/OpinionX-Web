@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { getCapabilityReport } from "@/lib/automation/capabilities";
 import { buildDailyBrief } from "@/lib/daily-engine";
@@ -258,9 +257,7 @@ export default async function AutomationDashboardPage() {
             {last.notes && <div className="text-zinc-600">{last.notes}</div>}
           </dl>
         ) : (
-          <p className="mt-2 text-sm text-zinc-500">
-            No runs logged yet.
-          </p>
+          <p className="mt-2 text-sm text-zinc-500">No runs logged yet.</p>
         )}
         <p className="mt-3 text-[11px] text-zinc-600">
           Next estimated cron: {next.toISOString()} (09:00 IST)

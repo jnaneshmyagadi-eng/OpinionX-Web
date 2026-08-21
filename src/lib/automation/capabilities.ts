@@ -26,7 +26,6 @@ export type CapabilityReport = {
 export async function getCapabilityReport(): Promise<CapabilityReport> {
   const hasServiceRole = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const hasAutomationUser = Boolean(process.env.AUTOMATION_USER_ID);
-  const hasCronSecret = Boolean(process.env.CRON_SECRET);
   const hasBuffer = isBufferConfigured();
 
   const pollAuto =

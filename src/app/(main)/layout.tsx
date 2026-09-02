@@ -7,7 +7,7 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto flex min-h-dvh max-w-lg flex-col bg-zinc-950">
+    <div className="mx-auto flex min-h-dvh max-w-2xl flex-col bg-zinc-950 lg:border-x lg:border-zinc-900">
       <TopBar />
       <main className="flex-1 overflow-y-auto pb-20">{children}</main>
       <BottomNav />

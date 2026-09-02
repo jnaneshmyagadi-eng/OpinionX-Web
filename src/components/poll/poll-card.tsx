@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -26,7 +26,6 @@ interface PollCardProps {
   poll: PollWithCreator;
   currentUserId?: string | null;
   onVote?: (pollId: string, choice: "a" | "b") => void;
-  /** Larger mobile “reel” presentation */
   reel?: boolean;
 }
 
@@ -67,14 +66,31 @@ export function PollCard({
   const { percentA, percentB, total } = calculatePercentages(counts.a, counts.b);
   const supabase = createClient();
   const hasImages = !!(poll.image_a_url || poll.image_b_url);
-  // Live results when votes exist; always after this user votes
   const showResults = voted !== null || total > 0;
   const moodKey = poll.mood as keyof typeof MOOD_META;
   const moodMeta = MOOD_META[moodKey];
   const creator = poll.profiles;
   const isOwn = !!currentUserId && currentUserId === poll.creator_id;
-  const closeRace =
-    total >= 5 && Math.abs(percentA - percentB) <= 8;
+  const closeRace = total >= 5 && Math.abs(percentA - percentB) <= 8;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFollow() {
+      if (!currentUserId || !creator?.id || isOwn) return;
+      const { data } = await supabase
+        .from("follows")
+        .select("id")
+        .eq("follower_id", currentUserId)
+        .eq("following_id", creator.id)
+        .maybeSingle();
+      if (!cancelled) setFollowing(!!data);
+    }
+    void loadFollow();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId, creator?.id, isOwn]);
 
   function getPollUrl() {
     if (typeof window !== "undefined") {
@@ -242,7 +258,6 @@ export function PollCard({
         reel && "snap-start"
       )}
     >
-      {/* Creator row */}
       <div className="flex items-center gap-3 px-4 pt-4">
         <Link
           href={`/profile/${creator?.username ?? ""}`}
@@ -320,7 +335,6 @@ export function PollCard({
         </h2>
       </Link>
 
-      {/* Results banner — distinctive poll identity */}
       {showResults && (
         <div className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-violet-400">
@@ -438,9 +452,7 @@ export function PollCard({
                   <motion.div
                     className={cn(
                       "absolute inset-y-0 left-0",
-                      isA
-                        ? "bg-violet-600/25"
-                        : "bg-fuchsia-600/25"
+                      isA ? "bg-violet-600/25" : "bg-fuchsia-600/25"
                     )}
                     initial={{ width: 0 }}
                     animate={{ width: `${percent}%` }}
@@ -493,7 +505,6 @@ export function PollCard({
         </div>
       )}
 
-      {/* Share after vote */}
       {(showSharePanel || voted) && (
         <div className="mx-3 mb-2 mt-2 rounded-xl border border-violet-500/25 bg-violet-500/10 p-3">
           <p className="mb-2 text-center text-xs font-semibold text-violet-200">
@@ -543,12 +554,7 @@ export function PollCard({
           <span className="text-xs">{counts.likes || ""}</span>
         </Button>
         <Link href={`/poll/${poll.id}`}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5"
-            aria-label="Comments"
-          >
+          <Button variant="ghost" size="sm" className="gap-1.5" aria-label="Comments">
             <MessageCircle className="h-4 w-4" />
             <span className="text-xs">{poll.comment_count || ""}</span>
           </Button>

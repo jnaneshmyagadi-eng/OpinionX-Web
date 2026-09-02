@@ -8,8 +8,10 @@ import {
   MessageCircle,
   Bookmark,
   Share2,
-  MoreHorizontal,
   Check,
+  BarChart3,
+  UserPlus,
+  UserCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn, calculatePercentages, formatRelativeTime } from "@/lib/utils";
@@ -37,9 +39,9 @@ function buildShareText(
   url: string
 ): string {
   if (total > 0) {
-    return `India is split: ${percentA}% chose ${optionA} vs ${percentB}% ${optionB}. What would you choose?\n${url}`;
+    return `I just voted on this 👀\n\n${optionA} vs ${optionB}\n\n${percentA}% vs ${percentB}% · ${total.toLocaleString()} votes\n\nWhat would you choose?\n${url}\n\n#LetTheInternetDecide`;
   }
-  return `What would you choose?\n${optionA} vs ${optionB}\n${url}`;
+  return `I just voted on this 👀\n\n${optionA} vs ${optionB}\n\nWhat would you choose?\n${url}\n\n#LetTheInternetDecide`;
 }
 
 export function PollCard({
@@ -51,22 +53,28 @@ export function PollCard({
   const [voted, setVoted] = useState<"a" | "b" | null>(poll.user_vote ?? null);
   const [liked, setLiked] = useState(poll.user_liked ?? false);
   const [saved, setSaved] = useState(poll.user_saved ?? false);
+  const [following, setFollowing] = useState(false);
   const [counts, setCounts] = useState({
     a: poll.vote_count_a,
     b: poll.vote_count_b,
     likes: poll.like_count,
   });
   const [loading, setLoading] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const { percentA, percentB, total } = calculatePercentages(counts.a, counts.b);
   const supabase = createClient();
   const hasImages = !!(poll.image_a_url || poll.image_b_url);
-  // Show live results to everyone when votes exist OR after the user has voted
+  // Live results when votes exist; always after this user votes
   const showResults = voted !== null || total > 0;
   const moodKey = poll.mood as keyof typeof MOOD_META;
   const moodMeta = MOOD_META[moodKey];
+  const creator = poll.profiles;
+  const isOwn = !!currentUserId && currentUserId === poll.creator_id;
+  const closeRace =
+    total >= 5 && Math.abs(percentA - percentB) <= 8;
 
   function getPollUrl() {
     if (typeof window !== "undefined") {
@@ -89,7 +97,6 @@ export function PollCard({
   async function handleVote(choice: "a" | "b") {
     if (voted || loading) return;
 
-    // Logged-out: store intent and send to signup (auth still required to write vote)
     if (!currentUserId) {
       try {
         sessionStorage.setItem(PENDING_VOTE_KEY(poll.id), choice);
@@ -121,6 +128,31 @@ export function PollCard({
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function toggleFollow() {
+    if (!currentUserId || isOwn || !creator?.id || followLoading) return;
+    setFollowLoading(true);
+    try {
+      if (following) {
+        await supabase
+          .from("follows")
+          .delete()
+          .eq("follower_id", currentUserId)
+          .eq("following_id", creator.id);
+        setFollowing(false);
+      } else {
+        await supabase.from("follows").insert({
+          follower_id: currentUserId,
+          following_id: creator.id,
+        });
+        setFollowing(true);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFollowLoading(false);
     }
   }
 
@@ -178,18 +210,16 @@ export function PollCard({
   }
 
   function shareWhatsApp() {
-    const text = getShareText();
     window.open(
-      `https://wa.me/?text=${encodeURIComponent(text)}`,
+      `https://wa.me/?text=${encodeURIComponent(getShareText())}`,
       "_blank",
       "noopener,noreferrer"
     );
   }
 
   function shareX() {
-    const text = getShareText();
     window.open(
-      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(getShareText())}`,
       "_blank",
       "noopener,noreferrer"
     );
@@ -205,19 +235,18 @@ export function PollCard({
     }
   }
 
-  const creator = poll.profiles;
-
   return (
     <article
       className={cn(
-        "overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60",
+        "overflow-hidden rounded-2xl border border-zinc-800/90 bg-zinc-900/70",
         reel && "snap-start"
       )}
     >
+      {/* Creator row */}
       <div className="flex items-center gap-3 px-4 pt-4">
         <Link
           href={`/profile/${creator?.username ?? ""}`}
-          className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-sm font-semibold"
+          className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-600 text-sm font-semibold"
         >
           {creator?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -231,12 +260,18 @@ export function PollCard({
           )}
         </Link>
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/profile/${creator?.username ?? ""}`}
-            className="truncate text-sm font-semibold text-white hover:underline"
-          >
-            {creator?.display_name || creator?.username || "Anonymous"}
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/profile/${creator?.username ?? ""}`}
+              className="truncate text-sm font-semibold text-white hover:underline"
+            >
+              {creator?.display_name || creator?.username || "Anonymous"}
+            </Link>
+            <span className="inline-flex items-center gap-0.5 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-300 ring-1 ring-violet-500/30">
+              <BarChart3 className="h-3 w-3" />
+              Poll
+            </span>
+          </div>
           <p className="text-xs text-zinc-500">
             {formatRelativeTime(poll.created_at)}
             {moodMeta && (
@@ -251,24 +286,59 @@ export function PollCard({
             <span className="capitalize">{poll.category}</span>
           </p>
         </div>
-        <button
-          className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-800"
-          aria-label="More"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
+        {currentUserId && !isOwn && creator?.id && (
+          <button
+            type="button"
+            disabled={followLoading}
+            onClick={toggleFollow}
+            className={cn(
+              "flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+              following
+                ? "bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700"
+                : "bg-white text-zinc-900"
+            )}
+            aria-label={following ? "Unfollow" : "Follow"}
+          >
+            {following ? (
+              <UserCheck className="h-3.5 w-3.5" />
+            ) : (
+              <UserPlus className="h-3.5 w-3.5" />
+            )}
+            {following ? "Following" : "Follow"}
+          </button>
+        )}
       </div>
 
       <Link href={`/poll/${poll.id}`} className="block px-4 py-3">
         <h2
           className={cn(
-            "font-medium leading-snug text-zinc-100",
-            reel ? "text-lg" : "text-base"
+            "font-semibold leading-snug text-zinc-50",
+            reel ? "text-lg" : "text-[15px]"
           )}
         >
           {poll.question}
         </h2>
       </Link>
+
+      {/* Results banner — distinctive poll identity */}
+      {showResults && (
+        <div className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-violet-400">
+            The internet has spoken
+          </p>
+          {closeRace && (
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">
+              ⚡ Too close to call
+            </span>
+          )}
+        </div>
+      )}
+
+      {!showResults && (
+        <p className="mb-2 px-4 text-center text-[11px] font-medium text-zinc-500">
+          Vote to see how the internet decides
+        </p>
+      )}
 
       {hasImages ? (
         <div className="relative grid grid-cols-2 gap-0.5 px-0.5">
@@ -286,9 +356,9 @@ export function PollCard({
                 disabled={!!voted || loading}
                 onClick={() => handleVote(choice)}
                 className={cn(
-                  "relative overflow-hidden bg-zinc-800 transition",
+                  "poll-option relative overflow-hidden bg-zinc-800",
                   reel ? "aspect-[3/5]" : "aspect-[3/4]",
-                  isSelected && "ring-2 ring-inset ring-purple-500",
+                  isSelected && "ring-2 ring-inset ring-violet-500",
                   !voted && "active:opacity-90"
                 )}
                 aria-label={`Vote for ${label}`}
@@ -306,7 +376,7 @@ export function PollCard({
                     {label}
                   </div>
                 )}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-10">
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-3 pt-12">
                   <p className="text-sm font-semibold text-white drop-shadow">
                     {label}
                   </p>
@@ -314,7 +384,7 @@ export function PollCard({
                     <motion.p
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="mt-0.5 text-lg font-bold text-white"
+                      className="mt-0.5 text-xl font-bold tabular-nums text-white"
                     >
                       {percent}%
                     </motion.p>
@@ -323,22 +393,20 @@ export function PollCard({
                 {showResults && (
                   <motion.div
                     className={cn(
-                      "absolute inset-x-0 bottom-0 h-1",
-                      isA
-                        ? "bg-gradient-to-r from-purple-500 to-purple-400"
-                        : "bg-gradient-to-r from-pink-500 to-orange-400"
+                      "absolute inset-x-0 bottom-0 h-1.5",
+                      isA ? "bg-violet-500" : "bg-fuchsia-500"
                     )}
                     initial={{ scaleX: 0 }}
                     animate={{ scaleX: percent / 100 }}
                     style={{ transformOrigin: "left" }}
-                    transition={{ duration: 0.5 }}
+                    transition={{ duration: 0.55 }}
                   />
                 )}
               </button>
             );
           })}
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-950/90 text-xs font-black text-white ring-2 ring-zinc-700">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-950/95 text-xs font-black text-white ring-2 ring-zinc-600">
               VS
             </span>
           </div>
@@ -358,12 +426,12 @@ export function PollCard({
                 disabled={!!voted || loading}
                 onClick={() => handleVote(choice)}
                 className={cn(
-                  "relative w-full overflow-hidden rounded-xl border text-left transition-all",
+                  "poll-option relative w-full overflow-hidden rounded-xl border text-left",
                   showResults
                     ? isSelected
-                      ? "border-purple-500/60 bg-purple-500/10"
+                      ? "border-violet-500/70 bg-violet-500/10"
                       : "border-zinc-700/60 bg-zinc-800/40"
-                    : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-500"
+                    : "border-zinc-700 bg-zinc-800/60 hover:border-zinc-500"
                 )}
               >
                 {showResults && (
@@ -371,20 +439,20 @@ export function PollCard({
                     className={cn(
                       "absolute inset-y-0 left-0",
                       isA
-                        ? "bg-gradient-to-r from-purple-600/30 to-purple-500/10"
-                        : "bg-gradient-to-r from-pink-600/30 to-orange-500/10"
+                        ? "bg-violet-600/25"
+                        : "bg-fuchsia-600/25"
                     )}
                     initial={{ width: 0 }}
                     animate={{ width: `${percent}%` }}
                     transition={{ duration: 0.6, ease: "easeOut" }}
                   />
                 )}
-                <div className="relative flex items-center justify-between gap-3 p-3">
+                <div className="relative flex items-center justify-between gap-3 p-3.5">
                   <span className="text-sm font-medium text-zinc-100">
                     {label}
                   </span>
                   {showResults && (
-                    <span className="text-sm font-bold text-white">
+                    <span className="text-base font-bold tabular-nums text-white">
                       {percent}%
                     </span>
                   )}
@@ -395,15 +463,22 @@ export function PollCard({
         </div>
       )}
 
-      {total > 0 && (
-        <p className="px-4 pt-2 text-center text-xs text-zinc-500">
-          {total.toLocaleString()} vote{total !== 1 ? "s" : ""}
+      <div className="flex items-center justify-between px-4 pt-2.5">
+        <p className="text-xs text-zinc-500">
+          {total > 0
+            ? `${total.toLocaleString()} vote${total !== 1 ? "s" : ""}`
+            : "Be the first to vote"}
         </p>
-      )}
+        {voted && (
+          <p className="text-xs font-medium text-violet-300">
+            You chose {voted === "a" ? poll.option_a : poll.option_b}
+          </p>
+        )}
+      </div>
 
       {!currentUserId && !voted && (
         <p className="px-4 pt-1 text-center text-[11px] text-zinc-500">
-          Tap a side to vote — sign up takes seconds
+          Tap a side · signup takes seconds · then your vote counts
         </p>
       )}
 
@@ -418,11 +493,11 @@ export function PollCard({
         </div>
       )}
 
-      {/* Post-vote / result share panel */}
+      {/* Share after vote */}
       {(showSharePanel || voted) && (
-        <div className="mx-3 mb-2 mt-2 rounded-xl border border-purple-500/30 bg-purple-500/10 p-3">
-          <p className="mb-2 text-center text-xs font-medium text-purple-200">
-            Share the split
+        <div className="mx-3 mb-2 mt-2 rounded-xl border border-violet-500/25 bg-violet-500/10 p-3">
+          <p className="mb-2 text-center text-xs font-semibold text-violet-200">
+            Share the result
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             <button

@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0b;
+  --background: #09090b;
   --foreground: #fafafa;
-  --card: #141416;
-  --card-hover: #1c1c1f;
+  --card: #121214;
+  --card-hover: #1a1a1e;
   --border: #27272a;
   --muted: #a1a1aa;
-  --accent: #a855f7;
-  --accent-pink: #ec4899;
-  --accent-orange: #f97316;
+  --accent: #8b5cf6;
+  --accent-soft: #a78bfa;
+  --accent-pink: #e879f9;
 }
 
 @theme inline {
@@ -51,7 +51,7 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #a855f7, #ec4899, #f97316);
+  background: linear-gradient(135deg, #8b5cf6, #d946ef);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -62,8 +62,17 @@ body {
 }
 
 .poll-option {
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, background-color 0.15s ease;
 }
 .poll-option:active {
   transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .poll-option {
+    transition: none;
+  }
 }

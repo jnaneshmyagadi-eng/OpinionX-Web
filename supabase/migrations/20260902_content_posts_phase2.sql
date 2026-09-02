@@ -1,0 +1,2 @@
+-- Phase 2 content_posts (applied on production via MCP)
+-- See applied migration content_posts_phase2

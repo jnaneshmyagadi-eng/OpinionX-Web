@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, Poll } from "@/types/database";
+import type { ContentPost } from "@/types/content";
 import { Button } from "@/components/ui/button";
 import { OpinionGraph } from "@/components/profile/opinion-graph";
 import { buildOpinionGraph, type CategoryOpinion } from "@/lib/discovery";
@@ -13,13 +14,16 @@ import Link from "next/link";
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [posts, setPosts] = useState<ContentPost[]>([]);
   const [savedPolls, setSavedPolls] = useState<Poll[]>([]);
   const [followers, setFollowers] = useState(0);
   const [following, setFollowing] = useState(0);
   const [voteCount, setVoteCount] = useState(0);
   const [opinionCats, setOpinionCats] = useState<CategoryOpinion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"created" | "saved" | "opinion">("created");
+  const [tab, setTab] = useState<
+    "posts" | "polls" | "saved" | "opinion"
+  >("posts");
   const router = useRouter();
   const supabase = createClient();
 
@@ -58,6 +62,14 @@ export default function ProfilePage() {
         .order("created_at", { ascending: false });
       setPolls(created ?? []);
 
+      const { data: myPosts } = await supabase
+        .from("content_posts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+      setPosts((myPosts as ContentPost[]) ?? []);
+
       const { data: saves } = await supabase
         .from("saves")
         .select("poll_id, polls(*)")
@@ -76,7 +88,6 @@ export default function ProfilePage() {
       }
       setSavedPolls(saved);
 
-      // Opinion graph from votes + poll categories (private to this user)
       const { data: myVotes } = await supabase
         .from("votes")
         .select("choice, poll_id")
@@ -119,12 +130,10 @@ export default function ProfilePage() {
 
   if (!profile) return null;
 
-  const list = tab === "created" ? polls : savedPolls;
-
   return (
     <div className="px-4 py-6">
       <div className="flex items-start gap-4">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-purple-600 to-pink-500 text-2xl font-bold text-white">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-600 text-2xl font-bold text-white">
           {profile.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -146,12 +155,16 @@ export default function ProfilePage() {
           )}
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <span>
-              <strong className="text-white">{voteCount}</strong>{" "}
-              <span className="text-zinc-500">votes</span>
+              <strong className="text-white">{posts.length}</strong>{" "}
+              <span className="text-zinc-500">posts</span>
             </span>
             <span>
               <strong className="text-white">{polls.length}</strong>{" "}
               <span className="text-zinc-500">polls</span>
+            </span>
+            <span>
+              <strong className="text-white">{voteCount}</strong>{" "}
+              <span className="text-zinc-500">votes</span>
             </span>
             <span>
               <strong className="text-white">{followers}</strong>{" "}
@@ -183,17 +196,25 @@ export default function ProfilePage() {
       </div>
 
       <div className="mt-6 flex border-b border-zinc-800">
-        {(["created", "saved", "opinion"] as const).map((t) => (
+        {(
+          [
+            { id: "posts" as const, label: "Posts" },
+            { id: "polls" as const, label: "Polls" },
+            { id: "saved" as const, label: "Saved" },
+            { id: "opinion" as const, label: "Opinion" },
+          ] as const
+        ).map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-3 text-sm font-medium capitalize transition ${
-              tab === t
-                ? "border-b-2 border-purple-500 text-white"
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`flex-1 py-3 text-sm font-medium transition ${
+              tab === t.id
+                ? "border-b-2 border-violet-500 text-white"
                 : "text-zinc-500"
             }`}
           >
-            {t === "opinion" ? "My Opinion" : t}
+            {t.label}
           </button>
         ))}
       </div>
@@ -202,14 +223,54 @@ export default function ProfilePage() {
         <div className="mt-4">
           <OpinionGraph categories={opinionCats} totalVotes={voteCount} />
         </div>
+      ) : tab === "posts" ? (
+        <div className="mt-4 space-y-3">
+          {posts.length === 0 ? (
+            <div className="py-10 text-center">
+              <p className="text-zinc-500">No posts yet</p>
+              <Link
+                href="/create/post"
+                className="mt-3 inline-block text-sm text-violet-400"
+              >
+                Create a post
+              </Link>
+            </div>
+          ) : (
+            posts.map((p) => (
+              <Link
+                key={p.id}
+                href={`/post/${p.id}`}
+                className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 transition hover:border-zinc-700"
+              >
+                {p.image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={p.image_url}
+                    alt=""
+                    className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-sm font-medium text-white">
+                    {p.body || (p.type === "image" ? "Photo" : "Post")}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {p.type === "image" ? "Photo" : "Text"} · {p.like_count}{" "}
+                    likes · {p.comment_count} comments
+                  </p>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
       ) : (
         <div className="mt-4 space-y-3">
-          {list.length === 0 ? (
+          {(tab === "polls" ? polls : savedPolls).length === 0 ? (
             <p className="py-10 text-center text-zinc-500">
-              {tab === "created" ? "No polls yet" : "No saved polls"}
+              {tab === "polls" ? "No polls yet" : "No saved polls"}
             </p>
           ) : (
-            list.map((p) => (
+            (tab === "polls" ? polls : savedPolls).map((p) => (
               <Link
                 key={p.id}
                 href={`/poll/${p.id}`}
